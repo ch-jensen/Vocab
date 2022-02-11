@@ -21,4 +21,5 @@ Feb. 11 2022: 2nd version. A major update to allow excersing Biblical Hebrew wit
 To run the program, you need to download and store the following files in the same folder:
 * Vocabulary training.ipynb
 * Vocab.py
-* Danish_glosses.csv
+
+If you want to exercise with other glosses than the default English glosses, you need to contribute the glosses according to the layout of this file: [Danish_glosses.csv](https://github.com/ch-jensen/Vocab/blob/main/Danish_glosses.csv). For the program to read additional files of glosses, they need to be stored in the same directory as the jupyter notebook and must be labelled [Language]_glosses.csv, e.g., Danish_glosses.csv or German_glosses.csv
