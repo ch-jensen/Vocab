@@ -1,4 +1,5 @@
 import os, re
+from os import listdir
 import random
 import time
 import collections
@@ -14,6 +15,9 @@ class TrainVocab:
     def __init__(self, time_threshold=14):
         
         self.threshold = time_threshold
+        gloss_files = [f for f in listdir() if '_glosses.csv' in f]
+        gloss_languages = [f.rstrip('_glosses.csv') for f in gloss_files]
+        gloss_languages.append('English')
         
         self.score = f'English_score.csv'
         #Creating score file if not existing
@@ -98,7 +102,7 @@ class TrainVocab:
             )
         
         self.chooseGlosses =  widgets.SelectMultiple(
-            options= ['English','Danish'],
+            options= gloss_languages,
             value = ['English'],
             description='Language',
             )
