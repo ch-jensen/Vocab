@@ -267,14 +267,14 @@ class TrainVocab:
             display(HTML('<p  style="color: green;">Correct!</p>'))
             
         else:
-            display(HTML(f'<p  style="color: red;">Wrong. Correct answer is "{", ".join(gloss)}</p>'))
+            display(HTML(f'<p  style="color: red;">Wrong. Correct answer is "{", ".join(gloss)}"</p>'))
             if F.lex.v(self.word) not in list(old_data.index):
                 start_time = time.time() - self.threshold*200000 #New but wrong entry is given more weight by predating entry
             else:
                 start_time = old_data[old_data.index == F.lex.v(self.word)].time_stamp.item()
                 time_spent = old_data[old_data.index == F.lex.v(self.word)].time_score.item()
                 
-        self.lexFact()
+        #self.lexFact()
             
         new_data = pd.DataFrame({F.lex.v(self.word):[self.word,time_spent, start_time, 1]}).T
         new_data.columns = ['node','time_score','time_stamp', 'rep']        
