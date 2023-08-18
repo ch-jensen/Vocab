@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from IPython.display import display, HTML
 import ipywidgets as widgets
 from tf.app import use
-A = use('bhsa', hoist=globals(), silent=True)
+A = use('etcbc/bhsa', hoist=globals(), silent=True)
 
 class TrainVocab:
   
