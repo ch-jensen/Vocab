@@ -216,23 +216,22 @@ class TrainVocab:
         example_dict = collections.defaultdict(lambda: collections.defaultdict())
 
         lex = F.lex_utf8.v(self.word)
-        rank = F.rank_lex.v(self.word)
-        fb = pd.DataFrame({'freq. rank'},{rank}, columns = [lex])
-
+        
+        display(HTML(f"<h3 style=font-family:Times align=left>{lex}</>"))
+        display(HTML("freq. rank: {}\n".format(F.rank_lex.v(self.word))))
+        
         if F.sp.v(self.word) == 'verb':
             for w in F.lex.s(F.lex.v(self.word))[1:]:
                 stem_dict[lex][F.vs.v(w)] += 1
                 if F.prs.v(w) == 'absent':
                     example_dict[lex][F.vs.v(w)] = w
+                    
+            for lex in stem_dict:
+                for st in stem_dict[lex]:
+                    display(HTML("{}: {} attestations".format(st, stem_dict[lex][st])))
 
-        display(HTML(f"<h3 style=font-family:Times align=left>{lex}</>"))
-        display(HTML("freq. rank: {}\n".format(rank)))
-        for lex in stem_dict:
-            for st in stem_dict[lex]:
-                display(HTML("{}: {} attestations".format(st, stem_dict[lex][st])))
-
-                if st in example_dict[lex]:
-                    A.pretty(example_dict[lex][st])
+                    if st in example_dict[lex]:
+                        A.pretty(example_dict[lex][st])
         
     def Test(self):
         self.df = pd.read_csv(self.score)
@@ -264,17 +263,19 @@ class TrainVocab:
         time_spent = time.time() - start_time
         
         if test in gloss:
-            display(HTML('<p  style="color: green;">Correct!</p>'))
+            display(HTML('<p  style="color: green;">Correct!'))
+            print(f'Other possible answers are "{", ".join(gloss)}"')
             
         else:
-            display(HTML(f'<p  style="color: red;">Wrong. Correct answer is "{", ".join(gloss)}"</p>'))
+            display(HTML('<p  style="color: red;">Wrong.'))
+            print(f'Correct answer is "{", ".join(gloss)}"')
             if F.lex.v(self.word) not in list(old_data.index):
                 start_time = time.time() - self.threshold*200000 #New but wrong entry is given more weight by predating entry
             else:
                 start_time = old_data[old_data.index == F.lex.v(self.word)].time_stamp.item()
                 time_spent = old_data[old_data.index == F.lex.v(self.word)].time_score.item()
                 
-        #self.lexFact()
+        self.lexFact()
             
         new_data = pd.DataFrame({F.lex.v(self.word):[self.word,time_spent, start_time, 1]}).T
         new_data.columns = ['node','time_score','time_stamp', 'rep']        
