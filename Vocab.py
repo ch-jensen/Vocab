@@ -262,7 +262,7 @@ class TrainVocab:
         test = input("Gloss ")
         time_spent = time.time() - start_time
         
-        if test in gloss:
+        if test in [re.sub('\([a-z]*\)', '', w).rstrip() for w in gloss]: #Removing parentheses with content, e.g. "how (interr)" > "how"
             display(HTML('<p  style="color: green;">Correct!'))
             print(f'Other possible answers are "{", ".join(gloss)}"')
             
