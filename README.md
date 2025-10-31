@@ -10,6 +10,8 @@ Dec. 21 2020: First commit and first version. A simple tool to excercise Biblica
 
 Feb. 11 2022: 2nd version. A major update to allow excersing Biblical Hebrew with own lists of glosses other than the standard English glosses of the database. In addition, an interactive ipython widget was introduced to allow setting the properties for the lexemes to learn (e.g., verbal stem, tense).
 
+Oct. 31 2025: Small fixes.
+
 ## Get started
 
 ```pip install text-fabric```

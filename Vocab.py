@@ -293,8 +293,10 @@ class TrainVocab:
                 new_data.at[F.lex.v(self.word), 'rep'] = rep_score +1
                 
             old_data = old_data.drop(F.lex.v(self.word)) #Dropping existing row
-            
-        data = old_data.append(new_data)
+        if len(old_data)>0:
+            data = pd.concat([old_data, new_data])
+        else:
+            data = new_data
         data = data.sort_index()
         data.index.name = 'lex'
         data.to_csv(self.score)
