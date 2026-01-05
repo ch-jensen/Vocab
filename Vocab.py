@@ -3,6 +3,7 @@ from os import listdir
 import random
 import time
 import collections
+import statistics
 import pandas as pd
 import matplotlib.pyplot as plt
 from IPython.display import display, HTML
@@ -304,7 +305,7 @@ class TrainVocab:
     def Stats(self):
         self.df = pd.read_csv(self.score)
         self.df.columns = ['lex','node','time_score','time_stamp','rep']
-        
+
         pot_lexemes = set([F.lex.v(w) for w in list(self.words.word)])
             
         #Get active lexemes, that is, all lexemes below learning threshold
@@ -319,3 +320,8 @@ class TrainVocab:
         plt.pie([fraction, 100-fraction])
         plt.title(f'{round(fraction, 2)}% active at level {self.startLevel.value}-{self.endLevel.value}')
         plt.show()
+
+        if len(active_lexemes) > 0:
+             print(f'Average time: {round(statistics.mean(active_lexemes.time_score),3)}')
+        print(f"Presets: {', '.join([w for w in self.choosePOS.value])}, {', '.join([w for w in self.chooseStem.value])}, {', '.join([w for w in self.chooseTense.value])}")
+        
