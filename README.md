@@ -12,6 +12,8 @@ Feb. 11 2022: 2nd version. A major update to allow excersing Biblical Hebrew wit
 
 Oct. 31 2025: Small fixes.
 
+Jan. 5 2026: Average time added to stats. Requirements file added.
+
 ## Get started
 
 ```pip install text-fabric```
