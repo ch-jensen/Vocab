@@ -22,6 +22,8 @@ Jan. 5 2026: Average time added to stats. Requirements file added.
 
 ```pip install ipywidgets```
 
+```pip install ipython```
+
 To run the program, you need to download and store the following files in the same folder:
 * Vocabulary training.ipynb
 * Vocab.py
