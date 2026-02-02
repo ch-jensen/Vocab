@@ -13,12 +13,13 @@ A = use('etcbc/bhsa', hoist=globals(), silent=True)
 
 class TrainVocab:
   
-    def __init__(self, time_threshold=14):
+    def __init__(self, time_threshold=2):
         
         self.threshold = time_threshold
         gloss_files = [f for f in listdir() if '_glosses.csv' in f]
         gloss_languages = [f.rstrip('_glosses.csv') for f in gloss_files]
         gloss_languages.append('English')
+        self.lex = ''
         
         self.score = f'English_score.csv'
         #Creating score file if not existing
@@ -197,10 +198,14 @@ class TrainVocab:
         if F.lex.v(word) in list(self.df.lex):
             level = self.getLevel(F.lex.v(word))
             
-            if iteration > 200: #If iterations exeeded, select word with highest difficulty level
+            if iteration > 50: #If iterations exeeded, select word with highest difficulty level
                 self.df['level'] = self.df.apply(lambda x: self.getLevel(x['lex']), axis=1) #Calculating level for each lex
-                highest_lex = self.df.sort_values(by='level', ascending=False)[:1].lex.item() #Choosing lex with highest level
+                highest_lex = random.choice(list(self.df.sort_values(by='level', ascending=False)[:10].lex)) #Choosing random lexeme among highest level lexemes
                 return random.choice([w for w in F.lex.s(highest_lex) if F.otype.v(w)=='word']) #Returning random word of given lex
+
+            elif F.lex.v(word) == self.lex:
+                iteration+=1
+                return self.GetWord(iteration)
                 
             elif level > self.threshold: #If difficulty level threshold exceeded
                 return word
@@ -240,6 +245,7 @@ class TrainVocab:
         old_data = pd.read_csv(self.score, index_col='lex')
         
         self.word = self.GetWord()
+        self.lex = F.lex.v(self.word)
         
         if self.chooseGlosses.value[0] == 'English':
             gloss = F.gloss.v(self.word)
@@ -265,16 +271,14 @@ class TrainVocab:
         
         if test in [re.sub('\([a-z]*\)', '', w).rstrip() for w in gloss]: #Removing parentheses with content, e.g. "how (interr)" > "how"
             display(HTML('<p  style="color: green;">Correct!'))
-            print(f'Other possible answers are "{", ".join(gloss)}"')
+            other_glosses = [g for g in gloss if g != test]
+            if other_glosses:
+                print(f'Other possible answers are "{", ".join(other_glosses)}"')
             
-        else:
+        else: #Wrong answer
             display(HTML('<p  style="color: red;">Wrong.'))
             print(f'Correct answer is "{", ".join(gloss)}"')
-            if F.lex.v(self.word) not in list(old_data.index):
-                start_time = time.time() - self.threshold*200000 #New but wrong entry is given more weight by predating entry
-            else:
-                start_time = old_data[old_data.index == F.lex.v(self.word)].time_stamp.item()
-                time_spent = old_data[old_data.index == F.lex.v(self.word)].time_score.item()
+            start_time = time.time() - self.threshold*200000 #Wrong answer is given more weight by predating entry
                 
         self.lexFact()
             
