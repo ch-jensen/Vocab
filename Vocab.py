@@ -33,9 +33,10 @@ class TrainVocab:
         stem_list = [F.vs.v(w) for w in F.otype.s('word')]
         tense_list = [F.vt.v(w) for w in F.otype.s('word')]
         rank_list = [F.rank_lex.v(w) for w in F.otype.s('word')]
+        sfx_list = [True if F.prs_ps.v(w) == 'p1' else False for w in F.otype.s('word')]
             
-        self.words_df = pd.DataFrame(list(zip(word_list, lex_list, language_list, POS_list, stem_list, tense_list, rank_list)),
-                              columns = ['word','lex','Language','POS','Stem','Tense','Rank'])
+        self.words_df = pd.DataFrame(list(zip(word_list, lex_list, language_list, POS_list, stem_list, tense_list, rank_list, sfx_list)),
+                              columns = ['word','lex','Language','POS','Stem','Tense','Rank','Sfx'])
         
         stems = [s[0] for s in F.vs.freqList() if s[0] not in {'NA','N/A','absent'}]
         
@@ -108,12 +109,27 @@ class TrainVocab:
             value = ['English'],
             description='Language',
             )
+
+        self.includeSuffix = widgets.Checkbox(
+            value=True,
+            description='Include pronominal suffix',
+            )
+
+        self.showLex = widgets.Checkbox(
+            value=False,
+            description='Show lexeme',
+            )
         
-        def commonFiltering(glosses, language, POS, stem, tense, start_level, end_level):
+        def commonFiltering(glosses, language, POS, stem, tense, start_level, end_level, sfx):
             
             POS = [mapPOS[w] for w in POS]
             stem = list(stem)
             tense = [mapTense[w] for w in tense]
+            if sfx == True:
+                sfx = [True,False]
+            else:
+                sfx = [False]
+            
             
             if 'verb' in POS:
                 stem.append('NA')
@@ -124,12 +140,14 @@ class TrainVocab:
                             (self.words_df.Stem.isin(stem)) &
                             (self.words_df.Tense.isin(tense)) &
                             (self.words_df.Rank >= start_level) &
-                            (self.words_df.Rank <= end_level)]
+                            (self.words_df.Rank <= end_level) &
+                            (self.words_df.Sfx.isin(sfx))]
             else:
                 self.words = self.words_df[(self.words_df.Language.isin(list(language))) &
                             (self.words_df.POS.isin(POS)) &
                             (self.words_df.Rank >= start_level) &
-                            (self.words_df.Rank <= end_level)]
+                            (self.words_df.Rank <= end_level) &
+                            (self.words_df.Sfx == sfx)]
                 
             self.score = f'{glosses[0]}_score.csv'
             #Creating score file if not existing
@@ -141,25 +159,28 @@ class TrainVocab:
                 self.words = self.words[self.words.lex.isin(existing_glosses)]
         
         def glossEvent(change):
-            commonFiltering(change.new, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value)
+            commonFiltering(change.new, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value, self.includeSuffix.value)
                 
         def languageEvent(change):
-            commonFiltering(self.chooseGlosses.value, change.new, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value)
+            commonFiltering(self.chooseGlosses.value, change.new, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value, self.includeSuffix.value)
 
         def POSEvent(change):
-            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, change.new, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value)
+            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, change.new, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value, self.includeSuffix.value)
             
         def stemEvent(change):
-            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, change.new, self.chooseTense.value, self.startLevel.value, self.endLevel.value)
+            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, change.new, self.chooseTense.value, self.startLevel.value, self.endLevel.value, self.includeSuffix.value)
             
         def tenseEvent(change):
-            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, change.new, self.startLevel.value, self.endLevel.value)
+            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, change.new, self.startLevel.value, self.endLevel.value, self.includeSuffix.value)
             
         def StartLevelEvent(change):
-            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, change.new, self.endLevel.value)
+            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, change.new, self.endLevel.value, self.includeSuffix.value)
             
         def EndLevelEvent(change):
-            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, change.new)
+            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, change.new, self.includeSuffix.value)
+
+        def suffixEvent(change):
+            commonFiltering(self.chooseGlosses.value, self.chooseLanguage.value, self.choosePOS.value, self.chooseStem.value, self.chooseTense.value, self.startLevel.value, self.endLevel.value, change.new)
         
         self.chooseLanguage.observe(languageEvent, names='value')
         self.startLevel.observe(StartLevelEvent, names='value')
@@ -168,6 +189,7 @@ class TrainVocab:
         self.chooseStem.observe(stemEvent, names='value')
         self.chooseTense.observe(tenseEvent, names='value')
         self.chooseGlosses.observe(glossEvent, names='value')
+        self.includeSuffix.observe(suffixEvent, names='value')
         
         box = widgets.HBox([self.startLevel, self.endLevel])
         tab_contents = ['Frequency','Part of Speech', 'Stem', 'Tense','Language', 'Gloss language']
@@ -176,8 +198,8 @@ class TrainVocab:
         tab.children = children
         for i in range(len(tab_contents)):
             tab.set_title(i, tab_contents[i])
-        display(tab)
-        
+        display(tab, self.showLex, self.includeSuffix)
+
         try:
             self.words
         except:
@@ -198,12 +220,13 @@ class TrainVocab:
         if F.lex.v(word) in list(self.df.lex):
             level = self.getLevel(F.lex.v(word))
             
-            if iteration > 50: #If iterations exeeded, select word with highest difficulty level
-                self.df['level'] = self.df.apply(lambda x: self.getLevel(x['lex']), axis=1) #Calculating level for each lex
-                highest_lex = random.choice(list(self.df.sort_values(by='level', ascending=False)[:10].lex)) #Choosing random lexeme among highest level lexemes
-                return random.choice([w for w in F.lex.s(highest_lex) if F.otype.v(w)=='word']) #Returning random word of given lex
+            if iteration > 50: #If iterations exeeded, select ranom word from the pool of relevant words
+                #self.df['level'] = self.df.apply(lambda x: self.getLevel(x['lex']), axis=1) #Calculating level for each lex
+                #highest_lex = random.choice(list(self.df[self.df.lex.isin(lexemes))].sort_values(by='level', ascending=False)[:10].lex)) #Choosing random lexeme among highest level lexemes
+                #return random.choice([w for w in F.lex.s(highest_lex) if F.otype.v(w)=='word']) #Returning random word of given lex
+                return word
 
-            elif F.lex.v(word) == self.lex:
+            elif F.lex.v(word) == self.lex: #Avoid repetition of the same word
                 iteration+=1
                 return self.GetWord(iteration)
                 
@@ -265,6 +288,8 @@ class TrainVocab:
         gloss = re.split('; |, ', gloss)
         
         A.plain(L.u(self.word, 'clause')[0], highlights = {self.word:'gold'})
+        if self.showLex.value == True:
+            display(HTML(f"<h3 style=font-family:Times align=left>Lexeme: {F.lex_utf8.v(self.word)}</>"))
         start_time = time.time()
         test = input("Gloss ")
         time_spent = time.time() - start_time
@@ -327,5 +352,5 @@ class TrainVocab:
 
         if len(active_lexemes) > 0:
              print(f'Average time: {round(statistics.mean(active_lexemes.time_score),3)}')
-        print(f"Presets: {', '.join([w for w in self.choosePOS.value])}, {', '.join([w for w in self.chooseStem.value])}, {', '.join([w for w in self.chooseTense.value])}")
+        print(f"Presets: {', '.join([w for w in self.choosePOS.value])}, {', '.join([w for w in self.chooseStem.value])}, {', '.join([w for w in self.chooseTense.value])}, {'sfx' if self.includeSuffix.value else ''}")
         
