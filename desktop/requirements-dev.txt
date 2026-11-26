@@ -1,2 +1,3 @@
 pytest
 text-fabric  # only for build_db.py
+pyinstaller  # building the app (packaging/vocab.spec)

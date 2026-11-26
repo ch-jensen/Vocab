@@ -9,14 +9,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QFontDatabase, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox,
                                QStackedWidget)
 
 from .. import __version__
 from .. import glosses
 from ..migrate import import_score_csv
-from ..store import Store
+from ..store import APP_ROOT, Store
 from .home import HomePage
 from .stats_page import StatsPage
 from .study import StudyPage
@@ -46,6 +46,12 @@ QTableWidget { font-size: 12pt; selection-background-color: #fbe3b0; selection-c
 def configure(app: QApplication) -> None:
     app.setApplicationName("Vocab")
     app.setStyle("Fusion")
+    # Bundled fonts (Ezra SIL), used when no better Hebrew font is installed.
+    for font_file in sorted((APP_ROOT / "fonts").glob("*.ttf")):
+        QFontDatabase.addApplicationFont(str(font_file))
+    icon = APP_ROOT / "packaging" / "vocab.ico"
+    if icon.exists():
+        app.setWindowIcon(QIcon(str(icon)))
     font = app.font()
     font.setPointSize(11)
     app.setFont(font)
@@ -59,7 +65,10 @@ Eep Talstra Centre for Bible and Computer (ETCBC), licensed
 <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>.
 <a href="https://github.com/ETCBC/bhsa">github.com/ETCBC/bhsa</a></p>
 <p><b>Scheduling:</b> <a href="https://github.com/open-spaced-repetition/py-fsrs">py-fsrs</a>
-(MIT licence). <b>Interface:</b> Qt for Python (LGPL).</p>"""
+and <a href="https://github.com/open-spaced-repetition/fsrs-rs-python">fsrs-rs</a>
+(MIT/BSD licences). <b>Interface:</b> Qt for Python (LGPL).
+<b>Font:</b> Ezra SIL by SIL International
+(<a href="https://openfontlicense.org">SIL Open Font License</a>).</p>"""
 
 
 class MainWindow(QMainWindow):
@@ -167,10 +176,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vocab")
     ap.add_argument("--user-db")
     ap.add_argument("--bhsa-db")
+    ap.add_argument("--self-test", metavar="REPORT",
+                    help="check that the app works (used after building the .exe) and exit")
     args, qt_args = ap.parse_known_args(argv)
 
     app = QApplication([sys.argv[0], *qt_args])
     configure(app)
+    if args.self_test:
+        return self_test(app, args.self_test, args.bhsa_db)
     try:
         store = Store(args.user_db, args.bhsa_db)
     except (FileNotFoundError, RuntimeError) as exc:
@@ -180,6 +193,48 @@ def main(argv=None) -> int:
     window.show()
     code = app.exec()
     store.close()
+    return code
+
+
+def self_test(app: QApplication, report: str, bhsa_db: str | None) -> int:
+    """Exercise the main parts without showing a window; write OK or the error to `report`.
+
+    A windowed .exe has no console, so the result goes to a file.
+    """
+    import tempfile
+    import traceback
+    from pathlib import Path
+
+    from .. import decks, optimize, stats
+    from ..decks import DeckConfig
+    lines = []
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "user.sqlite", bhsa_db)
+            deck = decks.create_deck(store, "Test", DeckConfig(plan_id="hebrew-frequency"))
+            window = MainWindow(store)
+            window.start_study(deck)
+            item = window.study.item
+            assert item is not None and item.key.lex_id == "hbo:W", item
+            window.study.answer.setText("and")
+            window.study._enter()
+            assert "Correct" in window.study.feedback.text()
+            window.show_stats()
+            lines.append(f"coverage {stats.coverage(store):.4f}")
+            lines.append(f"optimizer {optimize.fit(optimize.training_data(store), None).message}")
+            families = QFontDatabase.families()
+            lines.append("fonts " + ", ".join(f for f in ("SBL Hebrew", "Ezra SIL") if f in families))
+            assert "Ezra SIL" in families, "bundled font not loaded"
+            lines.append(f"bhsa {store.bhsa_db}")
+            window.close()
+            store.close()
+        lines.insert(0, "OK")
+        code = 0
+    except Exception:
+        lines.insert(0, "FAILED")
+        lines.append(traceback.format_exc())
+        code = 1
+    Path(report).write_text("\n".join(lines) + "\n", encoding="utf-8")
     return code
 
 

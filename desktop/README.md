@@ -101,3 +101,55 @@ installer build (Phase 5), a python.org Python is the safer choice.
 
 A word counts as *learned* once it has graduated from learning. "How much of the text you know"
 counts word occurrences in the Bible whose word is learned.
+
+# Phase 5: the Windows installer
+
+The installer is `VocabSetup-<version>.exe`: about 27 MB, no Python needed, and no
+administrator rights needed (it installs for the current user). Updating or uninstalling never
+touches the user's progress in `%APPDATA%\Vocab`.
+
+## Building it locally
+
+Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
+
+```
+python build_db.py                                   # if data\bhsa_vocab.sqlite is missing
+.venv\Scripts\pyinstaller packaging\vocab.spec --noconfirm
+dist\Vocab\Vocab.exe --self-test selftest.txt        # writes OK or the error
+"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" packaging\vocab.iss
+```
+
+This gives `dist\Vocab\` (the app folder, about 130 MB) and `dist\VocabSetup-0.1.0.exe`.
+Set `VOCAB_CONSOLE=1` before running PyInstaller to get a build that shows errors in a console.
+
+| File | Purpose |
+|---|---|
+| `vocab_app.py` | The launcher script that PyInstaller freezes |
+| `packaging/vocab.spec` | PyInstaller build: bundles the BHSA database, the font and the icon; leaves out unused Qt parts |
+| `packaging/vocab.iss` | Inno Setup script: per-user install, Start menu entry, optional desktop icon, English/Danish |
+| `packaging/LICENSES.txt` | Licences shown during installation (BHSA CC BY-NC, Ezra SIL OFL, LGPL Qt, …) |
+| `packaging/make_icon.py` | Draws `vocab.ico` (an aleph in Ezra SIL on the app's amber) |
+| `fonts/` | Ezra SIL (SIL Open Font License), used when SBL Hebrew is not installed |
+
+`--self-test REPORT` runs a study round, the statistics and the optimizer without showing a
+window and writes the result to `REPORT`. It's used to check a build, locally and in CI.
+
+## Releases on GitHub
+
+`.github/workflows/desktop-release.yml` builds the installer on Windows with a python.org Python:
+it downloads BHSA 2021 with Text-Fabric (cached between runs), builds the database, runs the
+tests, builds and self-tests the app, and builds the installer.
+
+* Every push to `main` that changes `desktop/` produces the installer as a build artifact (kept 14 days).
+* A tag such as `desktop-v0.2.0` also publishes a GitHub release with `VocabSetup-0.2.0.exe`:
+
+  ```
+  git tag desktop-v0.2.0
+  git push origin desktop-v0.2.0
+  ```
+
+Bump `__version__` in `vocab/__init__.py` and the numbers in `packaging/version_info.txt` with each release.
+
+**Code signing.** The installer isn't signed, so Windows SmartScreen warns about an unknown
+publisher ("More info" → "Run anyway"). Signing needs a code-signing certificate, for example via
+Azure Trusted Signing; it can be added to the workflow later.
