@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 
 from fsrs import Rating
-from PySide6.QtCore import QElapsedTimer, Qt, Signal
+from PySide6.QtCore import QElapsedTimer, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
@@ -145,10 +145,34 @@ class StudyPage(QWidget):
         layout.addWidget(self.facts)
         layout.addStretch(3)
 
-        self.done = QLabel()
-        self.done.setAlignment(Qt.AlignCenter)
-        self.done.setObjectName("subtitle")
-        layout.addWidget(self.done)
+        # "Finished for now" panel
+        self.done_title = QLabel()
+        self.done_title.setAlignment(Qt.AlignCenter)
+        self.done_title.setObjectName("title")
+        self.done_text = QLabel()
+        self.done_text.setAlignment(Qt.AlignCenter)
+        self.done_text.setWordWrap(True)
+        self.continue_btn = QPushButton()
+        self.continue_btn.clicked.connect(self.next_card)
+        done_back = QPushButton("Back to decks")
+        done_back.clicked.connect(self.finished.emit)
+        done_row = QHBoxLayout()
+        done_row.addStretch()
+        done_row.addWidget(self.continue_btn)
+        done_row.addWidget(done_back)
+        done_row.addStretch()
+        self.done = QWidget()
+        done_layout = QVBoxLayout(self.done)
+        done_layout.addWidget(self.done_title)
+        done_layout.addWidget(self.done_text)
+        done_layout.addSpacing(16)
+        done_layout.addLayout(done_row)
+        layout.insertWidget(layout.indexOf(self.clause), self.done)
+        self.done.hide()
+        # When words in learning become due, the Continue button is enabled.
+        self.wait_timer = QTimer(self, singleShot=True)
+        self.wait_timer.timeout.connect(self._learning_due)
+        self.finished.connect(self.wait_timer.stop)
 
         # Keyboard
         # All keys are handled in keyPressEvent. The answer box and the buttons
@@ -174,11 +198,9 @@ class StudyPage(QWidget):
         self.answered = False
         self.feedback.clear()
         self.facts.clear()
+        self.wait_timer.stop()
         if self.item is None:
-            for w in (self.clause, self.reference, self.lexeme_hint, self.controls):
-                w.hide()
-            self.done.setText("Well done! Nothing more to study in this deck today.")
-            self.done.show()
+            self._show_done()
             return
         self.done.hide()
         for w in (self.clause, self.reference, self.controls):
@@ -198,6 +220,36 @@ class StudyPage(QWidget):
             self.answer.clear()
             self.answer.setFocus()
         self.timer.start()
+
+    def _show_done(self) -> None:
+        for w in (self.clause, self.reference, self.lexeme_hint, self.controls):
+            w.hide()
+        self.done.show()
+        waiting = self.session.next_learning_due()
+        if waiting is None:
+            self.done_title.setText("Congratulations!")
+            self.done_text.setText("You have finished this deck for today.")
+            self.continue_btn.hide()
+            return
+        due, n = waiting
+        words = "1 word" if n == 1 else f"{n} words"
+        self.done_title.setText("Finished for now")
+        self.done_text.setText(
+            f"{words} in learning will be due again later today, the first in "
+            f"{interval_text(due)} (at {due.astimezone().strftime('%H:%M')}).<br>"
+            f'<span style="color:{MUTED}">You can come back then, or wait here.</span>')
+        self.continue_btn.setText("Continue")
+        self.continue_btn.setEnabled(False)
+        self.continue_btn.show()
+        wait_ms = max(int((due - self.session.clock()).total_seconds() * 1000), 0) + 500
+        self.wait_timer.start(wait_ms)
+
+    def _learning_due(self) -> None:
+        self._set_counts()
+        self.continue_btn.setEnabled(True)
+        self.continue_btn.setText("Continue  (Enter)")
+        self.continue_btn.setFocus()
+        self.done_text.setText("Words in learning are due again.")
 
     def _elapsed(self) -> int:
         return int(self.timer.elapsed())
@@ -260,6 +312,8 @@ class StudyPage(QWidget):
     # --- keys ------------------------------------------------------------------
     def _enter(self) -> None:
         if self.item is None:
+            if self.continue_btn.isVisible() and self.continue_btn.isEnabled():
+                self.next_card()
             return
         page = self.controls.currentIndex()
         if page == 0:

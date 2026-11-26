@@ -134,3 +134,24 @@ def test_return_key_self_graded(app, store):
     assert page.controls.currentIndex() == 2 and page.item is first
     QTest.keyClick(page.rate_buttons[next(iter(page.rate_buttons))], Qt.Key_3)
     assert page.controls.currentIndex() == 3 and page.feedback.text()
+
+
+def test_finished_for_now_screen(app, store):
+    from fsrs import Rating
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "Done", DeckConfig(plan_id="hebrew-frequency",
+                                                       answer_mode="self", new_per_day=1))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    page._enter()                       # show answer
+    page.rate(Rating.Again)             # due again in 1 minute
+    page._enter()                       # next: nothing is due yet
+    assert page.item is None
+    assert page.done.isVisibleTo(page)
+    assert "Finished for now" in page.done_title.text()
+    assert "1 word" in page.done_text.text()
+    assert not page.continue_btn.isEnabled()
+    assert page.wait_timer.isActive()
+    page._learning_due()                # what the timer does after a minute
+    assert page.continue_btn.isEnabled()

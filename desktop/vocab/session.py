@@ -3,8 +3,10 @@
 Order of cards, as in Anki:
 1. learning / relearning cards that are due,
 2. review cards that are due (up to the deck's daily review limit),
-3. new cards in deck order (up to the deck's daily new-card limit),
-4. learning cards due within the next 20 minutes ("learn ahead").
+3. new cards in deck order (up to the deck's daily new-card limit).
+When none of these are due, the session is finished for now, even if words in
+learning will be due again in a few minutes; the screen then says when (no
+"learn ahead": cards are never shown before they are due).
 The same lexeme is not shown twice in a row if anything else is available.
 
 The day starts at 04:00 local time, as in Anki.
@@ -27,7 +29,6 @@ from .occurrences import choose_occurrence
 from .store import Store, parse_ts, ts
 
 DAY_ROLLOVER_HOUR = 4
-LEARN_AHEAD = timedelta(minutes=20)
 NEW = 0  # state_before for a card's first review
 
 
@@ -189,10 +190,20 @@ class StudySession:
         new_left = self.cfg.new_per_day - new_today
         if new_left > 0:
             out += [(k, None) for k in self._new_keys(min(new_left, 2))]
-        if not out:
-            for row in self._due_cards((State.Learning, State.Relearning), now + LEARN_AHEAD, 2):
-                out.append((CardKey(row["lex_id"], row["stem"]), row))
         return out
+
+    def next_learning_due(self) -> tuple[datetime, int] | None:
+        """When the next word in learning is due today, and how many are waiting.
+
+        Used for the "finished for now" screen. Returns None when no word in
+        learning is due before the end of the study day.
+        """
+        end_of_day = day_start(self.clock(), self.tz) + timedelta(days=1)
+        row = self.con.execute("""
+            SELECT MIN(c.due), COUNT(*) FROM cards c
+            JOIN temp.deck_keys k ON k.lex_id = c.lex_id AND k.stem = c.stem
+            WHERE c.state IN (1, 3) AND c.due < ?""", (ts(end_of_day),)).fetchone()
+        return (parse_ts(row[0]), row[1]) if row[0] else None
 
     def next_item(self) -> StudyItem | None:
         candidates = self._candidates()

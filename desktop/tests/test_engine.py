@@ -157,7 +157,11 @@ def test_new_card_limit_and_learning(store, clock):
         assert out.rating == Rating.Again and out.state == State.Learning
     assert shown == ["hbo:W", "hbo:H", "hbo:L"]
     assert s.counts().new == 0
-    # Learning cards come back after their step (1 min) or as learn-ahead.
+    # Daily dose done: nothing is shown until a word in learning is due (1 min).
+    assert s.next_item() is None
+    due, waiting = s.next_learning_due()
+    assert waiting == 3 and due == clock.now + timedelta(minutes=1)
+    clock.advance(minutes=1)
     item = s.next_item()
     assert item is not None and not item.is_new
     # Nothing new the same day, even after all learning is done.
@@ -269,3 +273,21 @@ def test_qere_ketiv_cases_left_out(store):
     qere = {r[0] for r in store.con.execute(
         "SELECT node FROM bhsa.words WHERE lex_id = 'hbo:HJH[' AND qere_utf8 IS NOT NULL")}
     assert qere and nodes and not qere & set(nodes)
+
+
+def test_no_learn_ahead(store, clock):
+    """Like Anki finishing a session: a card due in 10 minutes is not shown early."""
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=1), clock)
+    s.rate(s.next_item(), Rating.Good)          # next learning step: 10 minutes
+    assert s.next_item() is None
+    clock.advance(minutes=9)
+    assert s.next_item() is None
+    clock.advance(minutes=1)
+    assert s.next_item() is not None
+
+
+def test_next_learning_due_only_today(store, clock):
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=1), clock)
+    assert s.next_learning_due() is None
+    s.rate(s.next_item(), Rating.Easy)          # graduates: due in days, not today
+    assert s.next_learning_due() is None
