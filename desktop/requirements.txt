@@ -1,1 +1,4 @@
 fsrs==6.3.3
+# 6.9.2 works with the Microsoft C++ runtime that Anaconda's Python loads;
+# PySide6 6.10+ needs a newer runtime and fails to import under Anaconda.
+PySide6-Essentials==6.9.2

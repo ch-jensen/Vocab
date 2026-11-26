@@ -249,3 +249,9 @@ def test_import_score_csv(store, tmp_path):
     assert cards["hbo:>MR["]["stability"] > cards["hbo:>B/"]["stability"]   # faster, fewer mistakes
     assert cards["hbo:>B/"]["difficulty"] > cards["hbo:>MR["]["difficulty"]
     assert import_score_csv(store, csv).skipped_existing == 2
+
+
+def test_elided_article_is_never_shown(store):
+    # The article is often elided after a preposition and has no written form.
+    rows = decks.occurrences(store.con, DeckConfig(), CardKey("hbo:H", "*"))
+    assert rows and all(form for _, form in rows)

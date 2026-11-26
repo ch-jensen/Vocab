@@ -59,4 +59,32 @@ faster than 0.5 × your median time → Easy (never on a word's first showing); 
 Self-grading (`study --self`) works like Anki's "show answer" mode.
 
 **Not yet done.** Fitting FSRS parameters to a user's own history (the `fsrs_parameters` meta
-key is read but nothing writes it yet), statistics, and the desktop UI.
+key is read but nothing writes it yet) and statistics.
+
+# Phase 3: the desktop interface (`vocab/gui/`)
+
+```
+.venv\Scripts\python -m vocab.gui
+```
+
+| Module | Purpose |
+|---|---|
+| `app.py` | The main window, menus (import old score files, About with the BHSA credit) and the entry point |
+| `home.py` | The deck list with today's new / learning / due counts; buttons to create, edit, delete and study decks |
+| `study.py` | The study screen: the clause in large pointed Hebrew with the word highlighted, then the answer (typed, or Anki-style with the four rating buttons and their intervals), the gloss, the dictionary form and facts about the word |
+| `deck_editor.py` | Creating and editing decks: a plan or your own selection (language, part of speech, frequency rank), forms (stem, tense, suffix, books and chapters) and study settings, with a live word count |
+
+**Keyboard.** Enter submits, shows the answer and moves on; 1–4 rate in self-graded mode; Esc returns
+to the deck list.
+
+**Fonts.** The first installed font is used from: SBL Hebrew, Ezra SIL, Taamey Frank CLM,
+Noto Serif Hebrew, Times New Roman. The installer should bundle a font with an open licence
+(Ezra SIL, under the SIL Open Font License) so that cantillation displays well for everyone.
+
+**Words with no written form.** BHSA records an article elided after a preposition (לַמֶּלֶךְ) as
+a word with an empty form. Such occurrences are never chosen for questions. A word read but not
+written (qere without ketiv) is shown in brackets.
+
+**Anaconda.** Under Anaconda's Python, PySide6 6.10+ fails with "DLL load failed", because
+Anaconda loads an older Microsoft C++ runtime. That's why PySide6 is pinned to 6.9.2. For the
+installer build (Phase 5), a python.org Python is the safer choice.

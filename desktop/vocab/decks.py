@@ -55,6 +55,8 @@ class DeckConfig:
     new_per_day: int = 10
     max_reviews_per_day: int = 200
     desired_retention: float = 0.9
+    answer_mode: str = "typed"            # 'typed' | 'self' (show answer, rate yourself)
+    show_lexeme: bool = False             # show the dictionary form with the question
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)
@@ -73,6 +75,8 @@ class DeckConfig:
     def validate(self) -> None:
         if self.suffix not in ("any", "with", "without"):
             raise ValueError(f"suffix must be any/with/without, not {self.suffix!r}")
+        if self.answer_mode not in ("typed", "self"):
+            raise ValueError(f"answer_mode must be typed/self, not {self.answer_mode!r}")
         if not 0.5 <= self.desired_retention <= 0.99:
             raise ValueError("desired_retention must be between 0.5 and 0.99")
         if self.new_per_day < 0 or self.max_reviews_per_day < 0:
@@ -187,11 +191,14 @@ def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
 def occurrences(con: sqlite3.Connection, cfg: DeckConfig, key: CardKey) -> list[sqlite3.Row]:
     """Occurrences (node, form_utf8) of a card that pass the occurrence filters.
 
+    Occurrences with no written form (mostly the article elided after a
+    preposition, as in לַמֶּלֶךְ) are left out, since there is nothing to show.
     Falls back to all occurrences of the card when none pass (e.g. for a
     lexeme the user added by hand).
     """
     base = ("SELECT w.node, w.form_utf8 FROM bhsa.words w "
-            "JOIN bhsa.verses v ON v.verse_id = w.verse_id WHERE w.lex_id = ?")
+            "JOIN bhsa.verses v ON v.verse_id = w.verse_id "
+            "WHERE w.lex_id = ? AND w.form_utf8 <> ''")
     params: list = [key.lex_id]
     if key.stem != ALL_STEMS:
         base += " AND w.stem = ?"

@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 USER_SCHEMA_VERSION = 1
 BHSA_SCHEMA_VERSION = "1"
 
-HERE = Path(__file__).resolve().parent
-DEFAULT_BHSA_DB = HERE.parent / "data" / "bhsa_vocab.sqlite"
+# In a PyInstaller build, bundled data files live under sys._MEIPASS.
+APP_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+DEFAULT_BHSA_DB = APP_ROOT / "data" / "bhsa_vocab.sqlite"
 
 
 def default_user_db() -> Path:
@@ -163,6 +165,19 @@ class Store:
             "SELECT stem, gloss FROM user_glosses WHERE lex_id = ? AND gloss_language = ?",
             (lex_id, gloss_language))})
         return out
+
+    def books(self) -> list[tuple[str, str, int]]:
+        """(BHSA name, English name, number of chapters) in canonical order."""
+        return [(r[0], r[1].replace("_", " "), r[2]) for r in self.con.execute(
+            "SELECT book, book_en, MAX(chapter) FROM bhsa.verses "
+            "GROUP BY book_order ORDER BY book_order")]
+
+    def stems(self) -> list[tuple[str, str, int]]:
+        """(stem, language, number of occurrences) for all verbal stems."""
+        return [tuple(r) for r in self.con.execute(
+            "SELECT s.stem, l.language, SUM(s.freq) FROM bhsa.lexeme_stems s "
+            "JOIN bhsa.lexemes l USING (lex_id) WHERE s.stem <> 'NA' "
+            "GROUP BY s.stem, l.language ORDER BY l.language DESC, SUM(s.freq) DESC")]
 
     def gloss_languages(self) -> list[str]:
         return [r[0] for r in self.con.execute(

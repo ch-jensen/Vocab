@@ -224,6 +224,17 @@ class StudySession:
             gloss=gloss, expected=answers.split_glosses(gloss),
         )
 
+    def preview(self, item: StudyItem) -> dict[Rating, datetime]:
+        """When the card would next be due for each rating (nothing is saved)."""
+        now = self.clock()
+        row = self.con.execute("SELECT * FROM cards WHERE lex_id = ? AND stem = ?",
+                               item.key).fetchone()
+        out = {}
+        for rating in Rating:
+            card = card_from_row(row) if row else Card(card_id=0, state=State.Learning, due=now)
+            out[rating] = self.scheduler.review_card(card, rating, now)[0].due
+        return out
+
     # --- answering ---------------------------------------------------------
     def reference_ms(self) -> float:
         rows = self.con.execute(
