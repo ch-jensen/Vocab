@@ -171,9 +171,9 @@ def test_counts_bar_and_tooltips(app, store):
     page._enter()
     page.rate(Rating.Again)                         # wrong: returns in 1 minute
     bar = page.counts
-    assert bar.learning.text() == "0 (1) learning"
+    assert bar.learning.text() == "0 (+1) learning"
     assert bar.new.text() == "2 new"
     assert "later today" in bar.learning.toolTip() and bar.due.toolTip()
     win.show_home()
-    assert win.home.table.item(0, 2).text() == "0 (1)"
+    assert win.home.table.item(0, 2).text() == "0 (+1)"
     assert win.home.table.horizontalHeaderItem(2).toolTip() == bar.learning.toolTip()

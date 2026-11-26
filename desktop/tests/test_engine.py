@@ -298,7 +298,12 @@ def test_learning_count_includes_later_today(store, clock):
     s.rate(s.next_item(), Rating.Again)       # back in 1 min
     s.rate(s.next_item(), Rating.Good)        # back in 10 min
     c = s.counts()
-    assert (c.learning, c.learning_today) == (0, 2)   # a wrong answer is counted at once
+    assert (c.learning, c.learning_later) == (0, 2)   # a wrong answer is counted at once
     clock.advance(minutes=1)
     c = s.counts()
-    assert (c.learning, c.learning_today) == (1, 2)
+    assert (c.learning, c.learning_later) == (1, 1)   # one is due now
+    item = s.next_item()
+    assert not item.is_new
+    s.rate(item, Rating.Again)                        # waiting again: back in parentheses
+    c = s.counts()
+    assert (c.learning, c.learning_later) == (0, 2)

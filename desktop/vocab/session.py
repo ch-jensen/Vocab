@@ -86,7 +86,7 @@ class Counts:
     new: int             # new words still to be introduced today
     learning: int        # words in learning that are due now
     review: int          # graduated words due for review now (within the daily limit)
-    learning_today: int = 0   # words in learning due now or later today
+    learning_later: int = 0   # words in learning not due yet but coming back later today
 
 
 def expected_gloss(glosses: dict[str, str], occurrence_stem: str, card_stem: str) -> str:
@@ -153,10 +153,10 @@ class StudySession:
         now = ts(self.clock())
         end_of_day = ts(day_start(self.clock(), self.tz) + timedelta(days=1))
         new_today, reviews_today = self._done_today()
-        learning, review, learning_today = self.con.execute("""
+        learning, review, learning_later = self.con.execute("""
             SELECT COALESCE(SUM(c.state IN (1, 3) AND c.due <= :now), 0),
                    COALESCE(SUM(c.state = 2 AND c.due <= :now), 0),
-                   COALESCE(SUM(c.state IN (1, 3) AND c.due < :eod), 0)
+                   COALESCE(SUM(c.state IN (1, 3) AND c.due > :now AND c.due < :eod), 0)
             FROM cards c JOIN temp.deck_keys k ON k.lex_id = c.lex_id AND k.stem = c.stem
             """, {"now": now, "eod": end_of_day}).fetchone()
         unseen = self.con.execute("""
@@ -166,7 +166,7 @@ class StudySession:
         return Counts(new=min(unseen, max(self.cfg.new_per_day - new_today, 0)),
                       learning=learning,
                       review=min(review, max(self.cfg.max_reviews_per_day - reviews_today, 0)),
-                      learning_today=learning_today)
+                      learning_later=learning_later)
 
     def _due_cards(self, states: tuple[int, ...], until: datetime, limit: int) -> list[sqlite3.Row]:
         marks = ",".join("?" * len(states))
