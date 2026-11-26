@@ -1,0 +1,23 @@
+Vocab: vocabulary training for Biblical Hebrew and Aramaic
+Copyright (c) 2020-2026 the Vocab authors
+
+This work is licensed under the Creative Commons Attribution-NonCommercial 4.0
+International License (CC BY-NC 4.0). To view a copy of this license, visit
+https://creativecommons.org/licenses/by-nc/4.0/
+The full legal text is at https://creativecommons.org/licenses/by-nc/4.0/legalcode
+
+Vocab uses and redistributes data derived from the BHSA (Biblia Hebraica
+Stuttgartensia Amstelodamensis), version 2021, by the Eep Talstra Centre for
+Bible and Computer (ETCBC), Vrije Universiteit Amsterdam, which is licensed
+under CC BY-NC 4.0 (https://github.com/ETCBC/bhsa). Vocab is licensed under
+the same terms. Any use must give credit to the ETCBC and may not be commercial.
+
+Third-party components included in the desktop app keep their own licences:
+
+  - Ezra SIL font, (c) SIL International: SIL Open Font License 1.1
+    (desktop/fonts/EzraSIL-OFL.txt)
+  - py-fsrs and fsrs-rs-python: MIT License
+  - Qt for Python (PySide6): GNU Lesser General Public License v3
+  - Python: Python Software Foundation License
+
+See desktop/packaging/LICENSES.txt for the notice shown by the installer.
