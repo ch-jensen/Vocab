@@ -21,9 +21,23 @@ APP_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
 DEFAULT_BHSA_DB = APP_ROOT / "data" / "bhsa_vocab.sqlite"
 
 
+def user_data_dir() -> Path:
+    """Where the user's progress is kept, following each system's convention.
+
+    Windows: %APPDATA%\\Vocab; macOS: ~/Library/Application Support/Vocab;
+    Linux: $XDG_DATA_HOME/Vocab or ~/.local/share/Vocab.
+    """
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return base / "Vocab"
+
+
 def default_user_db() -> Path:
-    base = os.environ.get("APPDATA") or os.path.expanduser("~/.local/share")
-    return Path(base) / "Vocab" / "user.sqlite"
+    return user_data_dir() / "user.sqlite"
 
 
 USER_SCHEMA = """

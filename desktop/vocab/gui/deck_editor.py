@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+                               QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
                                QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-                               QRadioButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+                               QRadioButton, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget,
+                               QVBoxLayout, QWidget)
 
 from .. import decks
-from ..decks import Deck, DeckConfig, Passage
+from ..decks import (Deck, DeckConfig, Passage, format_chapters, parse_chapters,
+                     passages_by_book)
 from ..store import Store
 from .common import POS_LABELS, TENSE_LABELS, stem_label
 
@@ -54,6 +56,108 @@ def with_buttons(lw: QListWidget) -> QWidget:
     row.addStretch()
     v.addLayout(row)
     return w
+
+
+class BookChapters(QWidget):
+    """A table of books, each with a checkbox and its own chapters (e.g. '1-11, 37-50')."""
+
+    changed = Signal()
+
+    def __init__(self, books: list[tuple[str, str, int]], passages: list[Passage] | None,
+                 parent=None):
+        super().__init__(parent)
+        self._books = books
+        chosen = passages_by_book(passages)
+        self.table = QTableWidget(len(books), 2)
+        self.table.setHorizontalHeaderLabels(["Book", "Chapters, e.g. 1-3; 11; 45-48 (empty = whole book)"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table.setMinimumHeight(220)
+        self.edits: list[QLineEdit] = []
+        for row, (book, english, last) in enumerate(books):
+            item = QTableWidgetItem(english)
+            item.setData(Qt.UserRole, book)
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if passages is None or book in chosen else Qt.Unchecked)
+            self.table.setItem(row, 0, item)
+            edit = QLineEdit()
+            edit.setObjectName("chapters")
+            edit.setPlaceholderText(f"1–{last}")
+            edit.setToolTip(f"{english} has {last} chapters. Separate parts with semicolons, e.g. 1-3; 11; 45-48")
+            if book in chosen:
+                ranges = [(a, min(b, last)) for a, b in chosen[book]]
+                edit.setText(format_chapters(ranges, last))
+            edit.textEdited.connect(lambda _text, r=row: self._edited(r))
+            self.table.setCellWidget(row, 1, edit)
+            self.edits.append(edit)
+        self.table.itemChanged.connect(lambda _item: self.changed.emit())
+
+        links = QHBoxLayout()
+        for text, state in (("All", True), ("None", False)):
+            link = QLabel(f'<a href="#">{text}</a>')
+            link.linkActivated.connect(lambda _=None, st=state: self.set_all(st))
+            links.addWidget(link)
+        links.addStretch()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.table)
+        layout.addLayout(links)
+
+    def _edited(self, row: int) -> None:
+        if self.edits[row].text().strip():
+            self.table.item(row, 0).setCheckState(Qt.Checked)   # typing chapters selects the book
+        self._validate(row)
+        self.changed.emit()
+
+    def _validate(self, row: int) -> str | None:
+        _book, english, last = self._books[row]
+        try:
+            parse_chapters(self.edits[row].text(), last)
+            self.edits[row].setStyleSheet("")
+            return None
+        except ValueError as exc:
+            self.edits[row].setStyleSheet("QLineEdit#chapters { border: 2px solid #c53030; }")
+            return f"{english}: {exc}"
+
+    def set_all(self, state: bool) -> None:
+        self.table.blockSignals(True)
+        for row in range(self.table.rowCount()):
+            self.table.item(row, 0).setCheckState(Qt.Checked if state else Qt.Unchecked)
+            if not state:
+                self.edits[row].clear()
+                self.edits[row].setStyleSheet("")
+        self.table.blockSignals(False)
+        self.changed.emit()
+
+    def set_book(self, book: str, chapters: str = "", checked: bool = True) -> None:
+        for row, (b, _, _) in enumerate(self._books):
+            if b == book:
+                self.table.item(row, 0).setCheckState(Qt.Checked if checked else Qt.Unchecked)
+                self.edits[row].setText(chapters)
+                self._validate(row)
+
+    def passages(self) -> list[Passage] | None:
+        """The chosen passages, or None for the whole Bible. Raises ValueError for bad input."""
+        out, whole = [], True
+        for row, (book, _english, last) in enumerate(self._books):
+            if self.table.item(row, 0).checkState() != Qt.Checked:
+                whole = False
+                continue
+            error = self._validate(row)
+            if error:
+                raise ValueError(error)
+            ranges = parse_chapters(self.edits[row].text(), last)
+            if ranges != [(1, last)]:
+                whole = False
+            out += [Passage(book) if (a, b) == (1, last) else Passage(book, a, b)
+                    for a, b in ranges]
+        if whole:
+            return None
+        if not out:
+            raise ValueError("Choose at least one book.")
+        return out
 
 
 class DeckEditor(QDialog):
@@ -130,23 +234,7 @@ class DeckEditor(QDialog):
                              ("without", "only without a suffix")):
             self.suffix.addItem(label, value)
         self.suffix.setCurrentIndex(self.suffix.findData(cfg.suffix))
-        self.books = checklist([(b, en) for b, en, _ in store.books()],
-                               {p.book for p in cfg.passages} if cfg.passages else None, 150)
-        self._chapters = {b: n for b, _, n in store.books()}
-        self.ch_from = QSpinBox()
-        self.ch_to = QSpinBox()
-        for s in (self.ch_from, self.ch_to):
-            s.setRange(1, 150)
-        one = cfg.passages[0] if cfg.passages and len(cfg.passages) == 1 else None
-        self.ch_from.setValue(one.chapter_from or 1 if one else 1)
-        self.ch_to.setValue(one.chapter_to or 150 if one else 150)
-        ch_row = QHBoxLayout()
-        ch_row.addWidget(QLabel("chapters"))
-        ch_row.addWidget(self.ch_from)
-        ch_row.addWidget(QLabel("to"))
-        ch_row.addWidget(self.ch_to)
-        ch_row.addWidget(QLabel("(when one book is chosen)"))
-        ch_row.addStretch()
+        self.books = BookChapters(store.books(), cfg.passages)
 
         forms = QWidget()
         ff = QFormLayout(forms)
@@ -158,8 +246,7 @@ class DeckEditor(QDialog):
         ff.addRow("Verbal stem", with_buttons(self.stems))
         ff.addRow("Tense", with_buttons(self.tenses))
         ff.addRow("Pronominal suffix", self.suffix)
-        ff.addRow("Books", with_buttons(self.books))
-        ff.addRow("", ch_row)
+        ff.addRow("Books and\nchapters", self.books)
 
         # --- Study tab -----------------------------------------------------
         self.gloss = QComboBox()
@@ -228,10 +315,10 @@ class DeckEditor(QDialog):
         for signal in (self.plan_radio.toggled, self.plan.currentIndexChanged,
                        self.hebrew.toggled, self.aramaic.toggled, self.rank_min.valueChanged,
                        self.rank_max.valueChanged, self.suffix.currentIndexChanged,
-                       self.ch_from.valueChanged, self.ch_to.valueChanged,
+                       self.books.changed,
                        self.gloss.currentIndexChanged, self.split.toggled):
             signal.connect(self._changed)
-        for lw in (self.pos, self.stems, self.tenses, self.books):
+        for lw in (self.pos, self.stems, self.tenses):
             lw.itemChanged.connect(self._changed)
         self._changed()
 
@@ -250,14 +337,7 @@ class DeckEditor(QDialog):
             pos = checked_values(self.pos)
             rank_min = self.rank_min.value() - 1 if self.rank_min.value() > 1 else None
             rank_max = self.rank_max.value() - 1 if self.rank_max.value() < MAX_RANK else None
-        books = checked_values(self.books)
-        passages = None
-        if books is not None:
-            if len(books) == 1:
-                passages = [Passage(books[0], self.ch_from.value(),
-                                    min(self.ch_to.value(), self._chapters[books[0]]))]
-            else:
-                passages = [Passage(b) for b in books]
+        passages = self.books.passages()       # raises ValueError for bad chapter input
         return DeckConfig(
             plan_id=plan_id, languages=languages, pos=pos, rank_min=rank_min, rank_max=rank_max,
             stems=checked_values(self.stems), tenses=checked_values(self.tenses),
@@ -274,7 +354,11 @@ class DeckEditor(QDialog):
         return len(decks.deck_cards(self.store.con, self.config()))
 
     def update_count(self) -> None:
-        n = self.card_count()
+        try:
+            n = self.card_count()
+        except ValueError as exc:
+            self.count.setText(f'<span style="color:#c53030">{exc}</span>')
+            return
         self.count.setText(f"{n} words in this deck")
 
     def save(self) -> None:
@@ -285,7 +369,11 @@ class DeckEditor(QDialog):
             else:
                 QMessageBox.warning(self, "Name missing", "Please give the deck a name.")
                 return
-        cfg = self.config()
+        try:
+            cfg = self.config()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Chapters", str(exc))
+            return
         if self.card_count() == 0:
             QMessageBox.warning(self, "Empty deck", "No words match these settings.")
             return

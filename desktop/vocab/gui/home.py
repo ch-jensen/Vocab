@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QLabel,
+from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
-from .. import decks
+from .. import deckfile, decks
 from ..session import StudySession
 from ..store import Store
 from .common import BAD, GOOD
@@ -54,6 +54,12 @@ class HomePage(QWidget):
         self.edit_btn.clicked.connect(self.edit_deck)
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.clicked.connect(self.delete_deck)
+        self.export_btn = QPushButton("Export…")
+        self.export_btn.setToolTip("Save this deck as a file to share. Your progress is not included.")
+        self.export_btn.clicked.connect(self.export_deck)
+        import_btn = QPushButton("Import…")
+        import_btn.setToolTip("Add a deck from a .vocabdeck file.")
+        import_btn.clicked.connect(self.import_deck)
 
         buttons = QHBoxLayout()
         buttons.addWidget(self.study_btn)
@@ -64,6 +70,9 @@ class HomePage(QWidget):
         buttons.addWidget(new_btn)
         buttons.addWidget(self.edit_btn)
         buttons.addWidget(self.delete_btn)
+        buttons.addSpacing(12)
+        buttons.addWidget(self.export_btn)
+        buttons.addWidget(import_btn)
 
         self.empty = QLabel("No decks yet. Click <b>New deck…</b> and choose "
                             "<i>Biblical Hebrew by frequency</i> to start with the most common words.")
@@ -117,7 +126,7 @@ class HomePage(QWidget):
 
     def _update_buttons(self) -> None:
         has = self.selected_deck() is not None
-        for b in (self.study_btn, self.edit_btn, self.delete_btn):
+        for b in (self.study_btn, self.edit_btn, self.delete_btn, self.export_btn):
             b.setEnabled(has)
 
     def study(self) -> None:
@@ -134,6 +143,55 @@ class HomePage(QWidget):
         deck = self.selected_deck()
         if deck and DeckEditor(self.store, deck, self).exec():
             self.refresh()
+
+    def export_deck(self) -> None:
+        deck = self.selected_deck()
+        if not deck:
+            return
+        safe = "".join(c if c.isalnum() or c in " -_()" else "_" for c in deck.name).strip()
+        path, _ = QFileDialog.getSaveFileName(self, "Export deck", f"{safe}{deckfile.EXTENSION}",
+                                              f"Vocab decks (*{deckfile.EXTENSION})")
+        if not path:
+            return
+        try:
+            n = deckfile.export_deck(self.store, deck, path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export deck", f"Could not save the file: {exc}")
+            return
+        own = f" It includes {n} of your own glosses." if n else ""
+        QMessageBox.information(self, "Export deck",
+                                f"The deck “{deck.name}” was saved.{own}\n\n"
+                                "Your learning progress is not included.")
+
+    def import_deck(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Import deck", "",
+                                              f"Vocab decks (*{deckfile.EXTENSION});;All files (*)")
+        if path:
+            self.import_deck_file(path)
+
+    def import_deck_file(self, path: str) -> deckfile.DeckImport | None:
+        try:
+            result = deckfile.import_deck(self.store, path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Import deck", str(exc))
+            return None
+        lines = [f"Added the deck “{result.deck.name}” with {result.words} words."]
+        if result.renamed:
+            lines.append("(You already had a deck with that name, so a number was added.)")
+        if result.glosses_added:
+            lines.append(f"{result.glosses_added} glosses from the deck were added.")
+        if result.glosses_kept:
+            lines.append(f"{result.glosses_kept} of your own glosses were kept.")
+        lines += result.warnings
+        QMessageBox.information(self, "Import deck", "\n".join(lines))
+        self.refresh()
+        self.select_deck(result.deck.deck_id)
+        return result
+
+    def select_deck(self, deck_id: int) -> None:
+        for row, deck in enumerate(self._decks):
+            if deck.deck_id == deck_id:
+                self.table.selectRow(row)
 
     def delete_deck(self) -> None:
         deck = self.selected_deck()

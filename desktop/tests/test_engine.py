@@ -307,3 +307,49 @@ def test_learning_count_includes_later_today(store, clock):
     s.rate(item, Rating.Again)                        # waiting again: back in parentheses
     c = s.counts()
     assert (c.learning, c.learning_later) == (0, 2)
+
+
+def test_parse_and_format_chapters():
+    from vocab.decks import format_chapters, parse_chapters
+    assert parse_chapters("", 50) == [(1, 50)]
+    assert parse_chapters("1-11, 37–50", 50) == [(1, 11), (37, 50)]
+    assert parse_chapters("3; 1-2, 12-11", 50) == [(1, 3), (11, 12)]     # sorted, merged, swapped
+    assert parse_chapters(" 5 ", 50) == [(5, 5)]
+    for bad in ("1-60", "0", "a-b", "1--3"):
+        with pytest.raises(ValueError):
+            parse_chapters(bad, 50)
+    assert format_chapters([(1, 11), (37, 50)], 50) == "1–11; 37–50"
+    # Several ranges and single chapters separated by semicolons.
+    assert parse_chapters("1-3; 11; 45-48", 50) == [(1, 3), (11, 11), (45, 48)]
+    assert format_chapters(parse_chapters("1-3; 11; 45-48", 50), 50) == "1–3; 11; 45–48"
+    # A book name or abbreviation at the start is ignored.
+    assert parse_chapters("Genesis 1-3; 11; 45-48", 50) == [(1, 3), (11, 11), (45, 48)]
+    assert parse_chapters("1 Sam 3-4", 31) == [(3, 4)]
+    assert parse_chapters("Gen. 12", 50) == [(12, 12)]
+    assert format_chapters([(5, 5)], 50) == "5"
+    assert format_chapters([(1, 50)], 50) == ""
+
+
+def test_several_chapter_ranges_in_one_book(store):
+    cfg = DeckConfig(passages=[Passage("Genesis", 1, 1), Passage("Genesis", 50, 50)])
+    keys = decks.deck_cards(store.con, cfg)
+    one = decks.deck_cards(store.con, DeckConfig(passages=[Passage("Genesis", 1, 1)]))
+    assert len(keys) > len(one)
+    for node, _ in decks.occurrences(store.con, cfg, keys[0]):
+        chapter = store.con.execute("SELECT chapter FROM bhsa.verses v JOIN bhsa.words w "
+                                    "USING (verse_id) WHERE w.node = ?", (node,)).fetchone()[0]
+        assert chapter in (1, 50)
+
+
+def test_user_data_dir_per_system(monkeypatch, tmp_path):
+    import sys
+    from pathlib import Path
+    from vocab import store as store_mod
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert store_mod.user_data_dir() == Path.home() / "Library" / "Application Support" / "Vocab"
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    assert store_mod.user_data_dir() == tmp_path / "Vocab"
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    assert store_mod.default_user_db() == tmp_path / "Roaming" / "Vocab" / "user.sqlite"

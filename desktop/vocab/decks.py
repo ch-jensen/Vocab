@@ -19,6 +19,7 @@ in לַמֶּלֶךְ). A lexeme attested only in such occurrences is in no deck
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -42,6 +43,59 @@ class Passage:
     book: str                       # BHSA book name, e.g. 'Genesis', 'Jona'
     chapter_from: int | None = None
     chapter_to: int | None = None
+
+
+def parse_chapters(text: str, last: int) -> list[tuple[int, int]]:
+    """'1-3; 11; 45-48' -> [(1, 3), (11, 11), (45, 48)]. Empty text means the whole book.
+
+    Parts are separated by semicolons (commas also work); ranges use '-' or '–';
+    single chapters are allowed. A book name or abbreviation at the start is
+    ignored ('Genesis 1-3; 11'). Raises ValueError with a readable message.
+    """
+    text = re.sub(r"^\s*\d?\s*[^\W\d_][^\d;,]*?\s+(?=\d)", "", text).strip()
+    if not text:
+        return [(1, last)]
+    ranges = []
+    for part in re.split(r"[,;]", text):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d+)\s*(?:[-–—]\s*(\d+))?", part)
+        if not m:
+            raise ValueError(f"“{part}” is not a chapter or a range (write e.g. 1-3; 11; 45-48)")
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else start
+        if start > end:
+            start, end = end, start
+        if start < 1 or end > last:
+            raise ValueError(f"“{part}”: the book has chapters 1–{last}")
+        ranges.append((start, end))
+    if not ranges:
+        return [(1, last)]
+    # Merge overlapping or adjacent ranges.
+    ranges.sort()
+    merged = [ranges[0]]
+    for start, end in ranges[1:]:
+        if start <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def format_chapters(ranges: list[tuple[int, int]], last: int) -> str:
+    """[(1, 3), (11, 11), (45, 48)] -> '1–3; 11; 45–48'; the whole book -> ''."""
+    if not ranges or ranges == [(1, last)]:
+        return ""
+    return "; ".join(str(a) if a == b else f"{a}–{b}" for a, b in ranges)
+
+
+def passages_by_book(passages: list[Passage] | None) -> dict[str, list[tuple[int, int]]]:
+    """Group passages by book, keeping open ends as None (= first/last chapter)."""
+    out: dict[str, list[tuple[int, int]]] = {}
+    for p in passages or []:
+        out.setdefault(p.book, []).append((p.chapter_from or 1, p.chapter_to or 999))
+    return out
 
 
 @dataclass

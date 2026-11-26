@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt                              # noqa: E402
 from PySide6.QtWidgets import QApplication                 # noqa: E402
 
 from vocab import decks                                    # noqa: E402
-from vocab.decks import DeckConfig                         # noqa: E402
+from vocab.decks import DeckConfig, Passage                # noqa: E402
 from vocab.store import DEFAULT_BHSA_DB, Store             # noqa: E402
 
 pytestmark = pytest.mark.skipif(not DEFAULT_BHSA_DB.exists(), reason="run build_db.py first")
@@ -19,7 +19,8 @@ pytestmark = pytest.mark.skipif(not DEFAULT_BHSA_DB.exists(), reason="run build_
 
 @pytest.fixture(scope="module")
 def app():
-    return QApplication.instance() or QApplication([])
+    from vocab.gui.app import VocabApplication
+    return QApplication.instance() or VocabApplication([])
 
 
 @pytest.fixture
@@ -83,16 +84,62 @@ def test_deck_editor_creates_deck(app, store):
     dlg = DeckEditor(store, None)
     dlg.custom_radio.setChecked(True)
     dlg.name.setText("Jonah")
-    for i in range(dlg.books.count()):
-        item = dlg.books.item(i)
-        item.setCheckState(Qt.Checked if item.data(Qt.UserRole) == "Jona" else Qt.Unchecked)
+    dlg.books.set_all(False)
+    dlg.books.set_book("Jona")
     cfg = dlg.config()
-    assert cfg.plan_id is None and cfg.passages[0].book == "Jona"
-    assert cfg.passages[0].chapter_to == 4                # clamped to the book
+    assert cfg.plan_id is None
+    assert [(p.book, p.chapter_from, p.chapter_to) for p in cfg.passages] == [("Jona", None, None)]
     assert 0 < dlg.card_count() < 600
     dlg.save()
     saved = decks.get_deck(store, "Jonah")
     assert saved is not None and saved.config == cfg
+
+
+def test_deck_editor_chapters_per_book(app, store):
+    from vocab.decks import Passage
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.custom_radio.setChecked(True)
+    dlg.name.setText("Primeval history and Exodus")
+    dlg.books.set_all(False)
+    dlg.books.set_book("Genesis", "1-11; 37–50")
+    dlg.books.set_book("Exodus", "1-15")
+    dlg.books.set_book("Jona")                      # whole book
+    cfg = dlg.config()
+    assert cfg.passages == [Passage("Genesis", 1, 11), Passage("Genesis", 37, 50),
+                            Passage("Exodus", 1, 15), Passage("Jona")]
+    n = dlg.card_count()
+    dlg.save()
+    # Reopening shows the same chapters per book.
+    again = DeckEditor(store, decks.get_deck(store, "Primeval history and Exodus"))
+    texts = {again.books._books[r][0]: again.books.edits[r].text()
+             for r in range(len(again.books.edits))
+             if again.books.table.item(r, 0).checkState() == Qt.Checked}
+    assert texts == {"Genesis": "1–11; 37–50", "Exodus": "1–15", "Jona": ""}
+    assert again.config() == cfg and again.card_count() == n
+
+
+def test_deck_editor_bad_chapters(app, store):
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.custom_radio.setChecked(True)
+    dlg.books.set_all(False)
+    dlg.books.set_book("Jona", "3-9")               # Jonah has 4 chapters
+    with pytest.raises(ValueError, match="Jonah"):
+        dlg.config()
+    dlg.update_count()
+    assert "chapters 1–4" in dlg.count.text()
+    dlg.books.set_all(False)
+    with pytest.raises(ValueError, match="at least one book"):
+        dlg.config()
+
+
+def test_deck_editor_all_books_means_no_restriction(app, store):
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    assert dlg.config().passages is None
+    dlg.books.set_book("Genesis", "1-50")           # all chapters: still the whole Bible
+    assert dlg.config().passages is None
 
 
 def test_deck_editor_round_trip(app, store):
@@ -221,3 +268,56 @@ def test_gloss_dialog_from_study(app, store):
 def test_bar_chart_scale():
     from vocab.gui.charts import nice_max
     assert [nice_max(v) for v in (0, 1, 3, 7, 12, 180, 999)] == [1, 1, 5, 10, 20, 200, 1000]
+
+
+def test_export_and_import_deck_from_home(app, store, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from vocab.gui.app import MainWindow
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: shown.append(a[2]))
+    decks.create_deck(store, "Jonah", DeckConfig(passages=[Passage("Jona", 1, 2)]))
+    win = MainWindow(store)
+    path = tmp_path / "jonah.vocabdeck"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    win.home.export_deck()
+    assert path.exists() and "progress is not included" in shown[-1]
+    result = win.home.import_deck_file(str(path))
+    assert result.deck.name == "Jonah (2)"
+    assert win.home.table.rowCount() == 2
+    assert win.home.selected_deck().name == "Jonah (2)"
+    bad = tmp_path / "bad.vocabdeck"
+    bad.write_text("{}", encoding="utf-8")
+    assert win.home.import_deck_file(str(bad)) is None and "not a Vocab deck" in shown[-1]
+
+
+def test_deck_editor_semicolon_example(app, store):
+    from vocab.decks import Passage
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.custom_radio.setChecked(True)
+    dlg.books.set_all(False)
+    dlg.books.set_book("Genesis", "1-3; 11; 45-48")
+    assert dlg.config().passages == [Passage("Genesis", 1, 3), Passage("Genesis", 11, 11),
+                                     Passage("Genesis", 45, 48)]
+    assert dlg.card_count() > 0
+
+
+def test_deck_file_opened_from_finder(app, store, tmp_path, monkeypatch):
+    """macOS delivers double-clicked files as FileOpen events, also before the window exists."""
+    from PySide6.QtGui import QFileOpenEvent
+    from vocab.gui.app import MainWindow, VocabApplication
+    if not isinstance(app, VocabApplication):
+        pytest.skip("another QApplication was created first")
+    opened = []
+    win = MainWindow(store)
+    monkeypatch.setattr(win.home, "import_deck_file", lambda path: opened.append(path))
+    app.window, app.pending = None, []
+    path = str(tmp_path / "shared.vocabdeck")
+    assert app.event(QFileOpenEvent(path))           # before the window: queued
+    assert app.event(QFileOpenEvent(str(tmp_path / "notes.txt")))   # other files: ignored
+    assert app.pending == [path] and opened == []
+    app.set_window(win)
+    app.processEvents()
+    assert opened == [path] and app.pending == []
+    app.window = None

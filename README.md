@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ch-jensen/Vocab/releases/latest"><b>Download for Windows</b></a>
+  <a href="https://github.com/ch-jensen/Vocab/releases/latest"><b>Download for Windows and Mac</b></a>
   · <a href="#licence">Licence</a>
   · <a href="desktop/README.md">For developers</a>
 </p>
@@ -45,17 +45,22 @@ Amstelodamensis, version 2021), the linguistic database of the Hebrew Bible made
 
 ## Getting started
 
-1. **[Download the latest `VocabSetup-….exe`](https://github.com/ch-jensen/Vocab/releases/latest)** and run it.
+1. **[Download Vocab from the latest release](https://github.com/ch-jensen/Vocab/releases/latest).**
    No Python or other software is needed, nor administrator rights.
-   Windows may warn that the publisher is unknown, because the installer isn't code-signed:
-   choose *More info* → *Run anyway*.
+   * **Windows:** run `VocabSetup-….exe`. Windows may warn that the publisher is unknown, because
+     the installer isn't code-signed: choose *More info* → *Run anyway*.
+   * **Mac:** take the `.dmg` for your Mac: `apple-silicon` for M1 and newer, `intel` for older
+     Macs (see Apple menu → *About This Mac*). Open it and drag Vocab to *Applications*. The app
+     isn't notarized by Apple, so the first time macOS says it can't verify it: open
+     *System Settings → Privacy & Security*, scroll down and click *Open Anyway*.
 2. Click **New deck…** and keep *Biblical Hebrew by frequency* to start with the most common words,
    or make your own selection.
 3. Click **Study**. Type the meaning and press Enter, or switch the deck to *show the answer and
    rate yourself*, as in Anki.
 
-Your progress is saved automatically in `%APPDATA%\Vocab`. It is kept when you update or uninstall
-the app. To update, install a newer version over the old one.
+Your progress is saved automatically (Windows: `%APPDATA%\Vocab`; Mac:
+`~/Library/Application Support/Vocab`). It is kept when you update or remove the app. To update,
+install a newer version over the old one.
 
 ## How studying works
 
@@ -79,9 +84,13 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
 ## Features
 
 * **Decks.** Predefined plans for Hebrew and Aramaic, ordered by frequency, or your own selection
-  by part of speech, frequency rank, verbal stem, tense, pronominal suffix, or book and chapters
-  (for example the vocabulary of Jonah, or the verbs in the piel). Optionally, each verbal stem can
-  be learned as a separate word. Progress is shared between decks.
+  by part of speech, frequency rank, verbal stem, tense, pronominal suffix, and books with their own
+  chapters (for example Genesis 1–11 and 37–50 together with Jonah, or the verbs in the piel).
+  Optionally, each verbal stem can be learned as a separate word. Progress is shared between decks.
+* **Sharing decks.** Export a deck to a `.vocabdeck` file and import it on another computer, or give
+  it to your students (double-clicking the file imports it). The file contains the deck's settings
+  and your own glosses for its words, but not your learning progress; on import, the recipient's
+  own glosses are kept.
 * **Statistics.** How much of the text you know, overall and for each book; progress per deck;
   your reviews over the last 30 days and the words due in the next 30.
 * **Personal scheduling.** After 400 reviews, FSRS can be fitted to your own answers, so intervals
@@ -91,7 +100,8 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
 * **From the notebook version.** Progress saved by the notebook version (`English_score.csv`,
   `Danish_score.csv`) can be imported with *File → Import scores*.
 
-Qere/ketiv cases are not asked about. The program runs on Windows 10 and 11 (64-bit). The source
+Qere/ketiv cases are not asked about. The program runs on Windows 10 and 11 (64-bit) and on
+macOS 11 or newer (Apple Silicon and Intel). The source
 code and build instructions are in [`desktop/`](desktop/README.md).
 
 ## Licence
