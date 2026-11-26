@@ -20,6 +20,36 @@ VERSION = re.search(r'__version__ = "([^"]+)"',
                     (ROOT / "vocab" / "__init__.py").read_text(encoding="utf-8")).group(1)
 MAC = sys.platform == "darwin"
 
+
+def windows_version_file() -> str:
+    """Write the Windows version resource for Vocab.exe from vocab.__version__.
+
+    The version is kept in one place (vocab/__init__.py); this fills in both the
+    numeric file/product version shown by Windows and the text fields.
+    """
+    numbers = [int(n) for n in re.findall(r"\d+", VERSION)[:4]]
+    numbers += [0] * (4 - len(numbers))
+    nums = tuple(numbers)
+    text = f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={nums}, prodvers={nums}, mask=0x3f, flags=0x0,
+                    OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('ProductName', 'Vocab'),
+      StringStruct('FileDescription', 'Vocab: Biblical Hebrew vocabulary'),
+      StringStruct('FileVersion', '{VERSION}'),
+      StringStruct('ProductVersion', '{VERSION}'),
+      StringStruct('LegalCopyright', 'Christian Canu Højgaard. BHSA data: ETCBC, CC BY-NC 4.0'),
+      StringStruct('OriginalFilename', 'Vocab.exe')])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+"""
+    path = Path(workpath) / "version_info.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
 # Anaconda's Python keeps sqlite3.dll in Library/bin, where PyInstaller does not
 # look; include it explicitly. (A python.org Python has it next to _sqlite3.pyd.)
 binaries = []
@@ -98,7 +128,7 @@ else:
         exclude_binaries=True,
         name="Vocab",
         icon=str(ROOT / "packaging" / "vocab.ico"),
-        version=str(ROOT / "packaging" / "version_info.txt"),
+        version=windows_version_file(),
         console=bool(os.environ.get("VOCAB_CONSOLE")),   # set VOCAB_CONSOLE=1 to see errors
         upx=False,
     )

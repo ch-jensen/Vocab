@@ -148,7 +148,7 @@ tests, builds and self-tests the app, and builds the installer.
   git push origin desktop-v0.2.0
   ```
 
-Bump `__version__` in `vocab/__init__.py` and the numbers in `packaging/version_info.txt` with each release.
+Raise `__version__` in `vocab/__init__.py` before each release; that is the only place the version is kept. The build writes the Windows version information of `Vocab.exe` and the macOS bundle version from it, and the release workflow names the installer and disk images after the tag.
 
 **Code signing.** The installer isn't signed, so Windows SmartScreen warns about an unknown
 publisher ("More info" → "Run anyway"). Signing needs a code-signing certificate, for example via
