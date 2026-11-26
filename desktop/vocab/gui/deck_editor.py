@@ -69,7 +69,7 @@ class BookChapters(QWidget):
         self._books = books
         chosen = passages_by_book(passages)
         self.table = QTableWidget(len(books), 2)
-        self.table.setHorizontalHeaderLabels(["Book", "Chapters (empty = whole book)"])
+        self.table.setHorizontalHeaderLabels(["Book", "Chapters, e.g. 1-3; 11; 45-48 (empty = whole book)"])
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
@@ -85,7 +85,7 @@ class BookChapters(QWidget):
             edit = QLineEdit()
             edit.setObjectName("chapters")
             edit.setPlaceholderText(f"1–{last}")
-            edit.setToolTip(f"{english} has {last} chapters. Examples: 1-11   1-11, 37-50   3")
+            edit.setToolTip(f"{english} has {last} chapters. Separate parts with semicolons, e.g. 1-3; 11; 45-48")
             if book in chosen:
                 ranges = [(a, min(b, last)) for a, b in chosen[book]]
                 edit.setText(format_chapters(ranges, last))

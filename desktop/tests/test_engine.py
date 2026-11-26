@@ -318,7 +318,14 @@ def test_parse_and_format_chapters():
     for bad in ("1-60", "0", "a-b", "1--3"):
         with pytest.raises(ValueError):
             parse_chapters(bad, 50)
-    assert format_chapters([(1, 11), (37, 50)], 50) == "1–11, 37–50"
+    assert format_chapters([(1, 11), (37, 50)], 50) == "1–11; 37–50"
+    # Several ranges and single chapters separated by semicolons.
+    assert parse_chapters("1-3; 11; 45-48", 50) == [(1, 3), (11, 11), (45, 48)]
+    assert format_chapters(parse_chapters("1-3; 11; 45-48", 50), 50) == "1–3; 11; 45–48"
+    # A book name or abbreviation at the start is ignored.
+    assert parse_chapters("Genesis 1-3; 11; 45-48", 50) == [(1, 3), (11, 11), (45, 48)]
+    assert parse_chapters("1 Sam 3-4", 31) == [(3, 4)]
+    assert parse_chapters("Gen. 12", 50) == [(12, 12)]
     assert format_chapters([(5, 5)], 50) == "5"
     assert format_chapters([(1, 50)], 50) == ""
 

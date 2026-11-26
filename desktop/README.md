@@ -157,7 +157,7 @@ Azure Trusted Signing; it can be added to the workflow later.
 # Later additions
 
 **Chapters per book.** In the deck editor's *Forms* tab, every book has its own chapter field:
-`1-11, 37-50`, `3`, or empty for the whole book. Typing chapters ticks the book; invalid input is
+`1-3; 11; 45-48` (ranges and single chapters separated by semicolons), or empty for the whole book. A book name at the start (`Genesis 1-3`) is ignored. Typing chapters ticks the book; invalid input is
 marked in red and explained. A deck can combine passages from several books
 (`DeckConfig.passages` holds one `Passage` per chapter range; `parse_chapters` and
 `format_chapters` in `decks.py` convert to and from the text form).

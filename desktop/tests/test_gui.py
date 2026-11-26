@@ -101,7 +101,7 @@ def test_deck_editor_chapters_per_book(app, store):
     dlg.custom_radio.setChecked(True)
     dlg.name.setText("Primeval history and Exodus")
     dlg.books.set_all(False)
-    dlg.books.set_book("Genesis", "1-11, 37–50")
+    dlg.books.set_book("Genesis", "1-11; 37–50")
     dlg.books.set_book("Exodus", "1-15")
     dlg.books.set_book("Jona")                      # whole book
     cfg = dlg.config()
@@ -114,7 +114,7 @@ def test_deck_editor_chapters_per_book(app, store):
     texts = {again.books._books[r][0]: again.books.edits[r].text()
              for r in range(len(again.books.edits))
              if again.books.table.item(r, 0).checkState() == Qt.Checked}
-    assert texts == {"Genesis": "1–11, 37–50", "Exodus": "1–15", "Jona": ""}
+    assert texts == {"Genesis": "1–11; 37–50", "Exodus": "1–15", "Jona": ""}
     assert again.config() == cfg and again.card_count() == n
 
 
@@ -288,3 +288,15 @@ def test_export_and_import_deck_from_home(app, store, tmp_path, monkeypatch):
     bad = tmp_path / "bad.vocabdeck"
     bad.write_text("{}", encoding="utf-8")
     assert win.home.import_deck_file(str(bad)) is None and "not a Vocab deck" in shown[-1]
+
+
+def test_deck_editor_semicolon_example(app, store):
+    from vocab.decks import Passage
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.custom_radio.setChecked(True)
+    dlg.books.set_all(False)
+    dlg.books.set_book("Genesis", "1-3; 11; 45-48")
+    assert dlg.config().passages == [Passage("Genesis", 1, 3), Passage("Genesis", 11, 11),
+                                     Passage("Genesis", 45, 48)]
+    assert dlg.card_count() > 0

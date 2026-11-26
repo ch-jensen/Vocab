@@ -46,12 +46,13 @@ class Passage:
 
 
 def parse_chapters(text: str, last: int) -> list[tuple[int, int]]:
-    """'1-11, 37-50' -> [(1, 11), (37, 50)]. Empty text means the whole book.
+    """'1-3; 11; 45-48' -> [(1, 3), (11, 11), (45, 48)]. Empty text means the whole book.
 
-    Accepts commas or semicolons between parts, '-' or '–' in ranges, and single
-    chapters ('3'). Raises ValueError with a readable message for bad input.
+    Parts are separated by semicolons (commas also work); ranges use '-' or '–';
+    single chapters are allowed. A book name or abbreviation at the start is
+    ignored ('Genesis 1-3; 11'). Raises ValueError with a readable message.
     """
-    text = text.strip()
+    text = re.sub(r"^\s*\d?\s*[^\W\d_][^\d;,]*?\s+(?=\d)", "", text).strip()
     if not text:
         return [(1, last)]
     ranges = []
@@ -61,7 +62,7 @@ def parse_chapters(text: str, last: int) -> list[tuple[int, int]]:
             continue
         m = re.fullmatch(r"(\d+)\s*(?:[-–—]\s*(\d+))?", part)
         if not m:
-            raise ValueError(f"“{part}” is not a chapter or a range like 1-11")
+            raise ValueError(f"“{part}” is not a chapter or a range (write e.g. 1-3; 11; 45-48)")
         start = int(m.group(1))
         end = int(m.group(2)) if m.group(2) else start
         if start > end:
@@ -83,10 +84,10 @@ def parse_chapters(text: str, last: int) -> list[tuple[int, int]]:
 
 
 def format_chapters(ranges: list[tuple[int, int]], last: int) -> str:
-    """[(1, 11), (37, 50)] -> '1–11, 37–50'; the whole book -> ''."""
+    """[(1, 3), (11, 11), (45, 48)] -> '1–3; 11; 45–48'; the whole book -> ''."""
     if not ranges or ranges == [(1, last)]:
         return ""
-    return ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in ranges)
+    return "; ".join(str(a) if a == b else f"{a}–{b}" for a, b in ranges)
 
 
 def passages_by_book(passages: list[Passage] | None) -> dict[str, list[tuple[int, int]]]:
