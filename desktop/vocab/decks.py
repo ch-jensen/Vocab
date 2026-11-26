@@ -10,6 +10,10 @@ A lexeme belongs to the deck if at least one of its occurrences passes all
 filters. When a card is studied, the occurrence shown is drawn from the
 occurrences that pass the occurrence filters. As in the notebook version, the
 stem and tense filters only apply to verbs.
+
+Some occurrences are never asked about (see ASKABLE): qere/ketiv cases, and
+words with no written form (mostly the article elided after a preposition, as
+in לַמֶּלֶךְ). A lexeme attested only in such occurrences is in no deck.
 """
 
 from __future__ import annotations
@@ -23,6 +27,9 @@ from typing import NamedTuple
 from .store import Store, ts
 
 ALL_STEMS = "*"   # card stem for a whole-lexeme card
+
+# Condition on bhsa.words w for occurrences that can be shown as a question.
+ASKABLE = "(w.qere_utf8 IS NULL AND w.form_utf8 <> '')"
 
 
 class CardKey(NamedTuple):
@@ -171,9 +178,12 @@ def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
     if occ_conds:
         # Occurrence filters: look at every word.
         source = ("bhsa.words w JOIN bhsa.verses v ON v.verse_id = w.verse_id", "COUNT(*)")
+        askable = ASKABLE
     else:
         # Lexeme filters only: the per-stem counts are enough (much faster).
         source = ("bhsa.lexeme_stems w", "SUM(w.freq)")
+        askable = (f"EXISTS (SELECT 1 FROM bhsa.words x WHERE x.lex_id = w.lex_id "
+                   f"AND x.stem = w.stem AND {ASKABLE.replace('w.', 'x.')})")
     rows = con.execute(f"""
         SELECT w.lex_id,
                CASE WHEN ? AND w.stem <> 'NA' THEN w.stem ELSE '*' END AS card_stem,
@@ -181,7 +191,7 @@ def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
         FROM {source[0]}
         JOIN bhsa.lexemes l ON l.lex_id = w.lex_id
         {plan_join}
-        WHERE (({where}){include}){exclude}
+        WHERE (({where}){include}){exclude} AND {askable}
         GROUP BY w.lex_id, card_stem
         ORDER BY plan_pos, lex_freq DESC, w.lex_id, n DESC
     """, params).fetchall()
@@ -191,14 +201,13 @@ def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
 def occurrences(con: sqlite3.Connection, cfg: DeckConfig, key: CardKey) -> list[sqlite3.Row]:
     """Occurrences (node, form_utf8) of a card that pass the occurrence filters.
 
-    Occurrences with no written form (mostly the article elided after a
-    preposition, as in לַמֶּלֶךְ) are left out, since there is nothing to show.
-    Falls back to all occurrences of the card when none pass (e.g. for a
+    Only askable occurrences are returned (see ASKABLE). Falls back to all
+    askable occurrences of the card when none pass the filters (e.g. for a
     lexeme the user added by hand).
     """
     base = ("SELECT w.node, w.form_utf8 FROM bhsa.words w "
             "JOIN bhsa.verses v ON v.verse_id = w.verse_id "
-            "WHERE w.lex_id = ? AND w.form_utf8 <> ''")
+            f"WHERE w.lex_id = ? AND {ASKABLE}")
     params: list = [key.lex_id]
     if key.stem != ALL_STEMS:
         base += " AND w.stem = ?"

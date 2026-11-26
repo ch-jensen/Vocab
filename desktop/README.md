@@ -81,9 +81,10 @@ to the deck list.
 Noto Serif Hebrew, Times New Roman. The installer should bundle a font with an open licence
 (Ezra SIL, under the SIL Open Font License) so that cantillation displays well for everyone.
 
-**Words with no written form.** BHSA records an article elided after a preposition (לַמֶּלֶךְ) as
-a word with an empty form. Such occurrences are never chosen for questions. A word read but not
-written (qere without ketiv) is shown in brackets.
+**Occurrences that are never asked.** Qere/ketiv cases are left out, and so are words with no
+written form (BHSA records an article elided after a preposition, as in לַמֶּלֶךְ, as an empty
+word). 112 rare lexemes occur only in qere/ketiv cases, so they're in no deck; this is why the
+Hebrew plan decks have 8,439 words rather than 8,522.
 
 **Anaconda.** Under Anaconda's Python, PySide6 6.10+ fails with "DLL load failed", because
 Anaconda loads an older Microsoft C++ runtime. That's why PySide6 is pinned to 6.9.2. For the

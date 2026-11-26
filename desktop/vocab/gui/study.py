@@ -22,8 +22,7 @@ RATING_LABELS = {Rating.Again: "Again", Rating.Hard: "Hard", Rating.Good: "Good"
 def clause_html(item: StudyItem) -> str:
     parts = []
     for w in item.clause:
-        # A word read but not written (qere without ketiv) is shown in brackets.
-        form = html.escape(w.form) if w.form or not w.qere else f"[{html.escape(w.qere)}]"
+        form = html.escape(w.form)
         if w.node == item.node:
             form = f'<span style="color:{ACCENT}; font-weight:bold;">{form}</span>'
         parts.append(form + html.escape(w.trailer))

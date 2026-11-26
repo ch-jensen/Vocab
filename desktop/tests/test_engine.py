@@ -49,7 +49,10 @@ def session(store, cfg, clock, name="deck"):
 
 def test_plan_deck_order(store):
     keys = decks.deck_cards(store.con, DeckConfig(plan_id="hebrew-frequency"))
-    assert len(keys) == 8522
+    askable = store.con.execute(
+        "SELECT COUNT(DISTINCT lex_id) FROM bhsa.words WHERE lex_id LIKE 'hbo:%' "
+        "AND qere_utf8 IS NULL AND form_utf8 <> ''").fetchone()[0]
+    assert len(keys) == askable and 8400 < askable < 8522
     assert keys[:3] == [CardKey("hbo:W", "*"), CardKey("hbo:H", "*"), CardKey("hbo:L", "*")]
 
 
@@ -255,3 +258,14 @@ def test_elided_article_is_never_shown(store):
     # The article is often elided after a preposition and has no written form.
     rows = decks.occurrences(store.con, DeckConfig(), CardKey("hbo:H", "*"))
     assert rows and all(form for _, form in rows)
+
+
+def test_qere_ketiv_cases_left_out(store):
+    # NJWT/ (Naioth) only occurs as a ketiv with a qere: in no deck at all.
+    for cfg in (DeckConfig(plan_id="hebrew-frequency"), DeckConfig(suffix="without")):
+        assert "hbo:NJWT/" not in {k.lex_id for k in decks.deck_cards(store.con, cfg)}
+    # A common word with some qere/ketiv occurrences: those are never shown.
+    nodes = [n for n, _ in decks.occurrences(store.con, DeckConfig(), CardKey("hbo:HJH[", "*"))]
+    qere = {r[0] for r in store.con.execute(
+        "SELECT node FROM bhsa.words WHERE lex_id = 'hbo:HJH[' AND qere_utf8 IS NOT NULL")}
+    assert qere and nodes and not qere & set(nodes)
