@@ -6,8 +6,8 @@ VSVersionInfo(
     StringFileInfo([StringTable('040904B0', [
       StringStruct('ProductName', 'Vocab'),
       StringStruct('FileDescription', 'Vocab: Biblical Hebrew vocabulary'),
-      StringStruct('FileVersion', '0.1.0'),
-      StringStruct('ProductVersion', '0.1.0'),
+      StringStruct('FileVersion', '0.2.0'),
+      StringStruct('ProductVersion', '0.2.0'),
       StringStruct('LegalCopyright', 'BHSA data: ETCBC, CC BY-NC 4.0'),
       StringStruct('OriginalFilename', 'Vocab.exe')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
