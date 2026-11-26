@@ -169,3 +169,35 @@ not included. On import, the user's own glosses are never overwritten, a name al
 number, and files from a newer app version, unknown plans or unknown books are refused with a
 message. The installer registers `.vocabdeck`, so double-clicking a file starts Vocab and imports it
 (`Vocab.exe deck.vocabdeck`).
+
+# macOS
+
+The same app runs on macOS; GitHub Actions builds it on Apple's runners, so no Mac is needed to
+release it. Each release has two disk images: `Vocab-<version>-macos-apple-silicon.dmg` (M1 and
+newer, built on `macos-14`) and `Vocab-<version>-macos-intel.dmg` (built on `macos-15-intel`). The
+disk image holds `Vocab.app` and a link to *Applications* to drag it onto.
+
+| What | Where |
+|---|---|
+| `Vocab.app` bundle, icon, Info.plist (version, `.vocabdeck` file type) | the `MAC` branch of `packaging/vocab.spec` |
+| Mac icon | `packaging/vocab.icns`, written by `packaging/make_icon.py` (with the margin macOS icons have) |
+| Progress | `~/Library/Application Support/Vocab/user.sqlite` (`store.user_data_dir`) |
+| Opening `.vocabdeck` files from the Finder | `VocabApplication` in `gui/app.py` handles Qt's `FileOpen` event, also while the app runs |
+| Disk image | `hdiutil` in the `macos` job of the workflow |
+
+To build on a Mac yourself (Python 3.12 from python.org or Homebrew):
+
+```
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pyinstaller pytest
+python3 build_db.py                                  # needs text-fabric and the BHSA data
+.venv/bin/pyinstaller packaging/vocab.spec --noconfirm
+dist/Vocab.app/Contents/MacOS/Vocab --self-test selftest.txt
+```
+
+**Not notarized.** PyInstaller signs the app ad hoc (required on Apple Silicon), but it isn't signed
+with an Apple Developer ID or notarized, so Gatekeeper asks for confirmation the first time (System
+Settings → Privacy & Security → *Open Anyway*). Notarization needs an Apple Developer account
+($99/year) and can be added to the workflow later.
+
+**Not yet tested on a real Mac.** The workflow builds, tests and self-tests the app on Apple's
+runners, but the app hasn't been opened by hand on a Mac yet.

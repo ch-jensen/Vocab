@@ -27,5 +27,6 @@ Qt for Python / PySide6
 Python
   Python Software Foundation License: https://docs.python.org/3/license.html
 
-Your progress is stored in %APPDATA%\Vocab\user.sqlite and is kept when the
+Your progress is stored in %APPDATA%\Vocab\user.sqlite (Windows) or
+~/Library/Application Support/Vocab/user.sqlite (Mac) and is kept when the
 program is updated or uninstalled.

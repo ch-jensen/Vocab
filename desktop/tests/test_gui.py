@@ -19,7 +19,8 @@ pytestmark = pytest.mark.skipif(not DEFAULT_BHSA_DB.exists(), reason="run build_
 
 @pytest.fixture(scope="module")
 def app():
-    return QApplication.instance() or QApplication([])
+    from vocab.gui.app import VocabApplication
+    return QApplication.instance() or VocabApplication([])
 
 
 @pytest.fixture
@@ -300,3 +301,23 @@ def test_deck_editor_semicolon_example(app, store):
     assert dlg.config().passages == [Passage("Genesis", 1, 3), Passage("Genesis", 11, 11),
                                      Passage("Genesis", 45, 48)]
     assert dlg.card_count() > 0
+
+
+def test_deck_file_opened_from_finder(app, store, tmp_path, monkeypatch):
+    """macOS delivers double-clicked files as FileOpen events, also before the window exists."""
+    from PySide6.QtGui import QFileOpenEvent
+    from vocab.gui.app import MainWindow, VocabApplication
+    if not isinstance(app, VocabApplication):
+        pytest.skip("another QApplication was created first")
+    opened = []
+    win = MainWindow(store)
+    monkeypatch.setattr(win.home, "import_deck_file", lambda path: opened.append(path))
+    app.window, app.pending = None, []
+    path = str(tmp_path / "shared.vocabdeck")
+    assert app.event(QFileOpenEvent(path))           # before the window: queued
+    assert app.event(QFileOpenEvent(str(tmp_path / "notes.txt")))   # other files: ignored
+    assert app.pending == [path] and opened == []
+    app.set_window(win)
+    app.processEvents()
+    assert opened == [path] and app.pending == []
+    app.window = None

@@ -1,10 +1,13 @@
-# Builds the Windows installer for the desktop app.
+# Builds the desktop app for Windows (installer) and macOS (disk image).
 #
-# Runs on pull requests and pushes to main that touch desktop/ (installer kept as a build
-# artifact for 14 days), and on tags like desktop-v0.2.0, which also publish a
-# GitHub release with VocabSetup-0.2.0.exe attached.
+# Runs on pull requests and pushes to main that touch desktop/ (the builds are
+# kept as artifacts for 14 days), and on tags like desktop-v0.2.0, which also
+# publish a GitHub release with all builds attached.
+#
+# Jobs: database (BHSA -> SQLite, once) -> windows + macos (test, build,
+# self-test, package) -> release (tags only).
 
-name: Desktop installer
+name: Desktop app
 
 on:
   push:
@@ -18,48 +21,65 @@ on:
 permissions:
   contents: write    # for creating the release on tags
 
+env:
+  BHSA_VERSION: "2021"
+  PYTHON_VERSION: "3.12"
+
 jobs:
-  build:
-    runs-on: windows-latest
+  database:
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: desktop
-    env:
-      BHSA_VERSION: "2021"
-      QT_QPA_PLATFORM: offscreen
-      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
-
-      # A python.org Python (not Anaconda) avoids the DLL problems described in desktop/README.md.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: desktop/requirements*.txt
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt pyinstaller
-
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Text-Fabric
+        run: pip install text-fabric
       - name: Cache BHSA data
         uses: actions/cache@v4
         with:
           path: ~/text-fabric-data/github/ETCBC/bhsa/tf/${{ env.BHSA_VERSION }}
           key: bhsa-${{ env.BHSA_VERSION }}-v1
-
       - name: Download BHSA (if not cached)
         env:
           GHPERS: ${{ secrets.GITHUB_TOKEN }}   # avoids GitHub API rate limits in Text-Fabric
         run: python -c "from tf.app import use; use('ETCBC/bhsa', version='${{ env.BHSA_VERSION }}', mod=None, hoist=False, silent='deep')"
-
       - name: Build the vocabulary database
         run: python build_db.py --version ${{ env.BHSA_VERSION }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bhsa-database
+          path: desktop/data/bhsa_vocab.sqlite
+          retention-days: 3
 
+  windows:
+    needs: database
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      # A python.org Python (not Anaconda) avoids the DLL problems described in desktop/README.md.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: desktop/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pyinstaller
+      - uses: actions/download-artifact@v4
+        with:
+          name: bhsa-database
+          path: desktop/data
       - name: Run tests
         run: python -m pytest -q
-
       - name: Version
         id: version
         shell: bash
@@ -69,37 +89,109 @@ jobs:
           else
             echo "version=$(python -c 'import vocab; print(vocab.__version__)')-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Build the app with PyInstaller
         run: pyinstaller packaging/vocab.spec --noconfirm --distpath dist --workpath build
-
       - name: Self-test the built app
         shell: pwsh
         run: |
           $p = Start-Process dist\Vocab\Vocab.exe -ArgumentList "--self-test", "selftest.txt" -Wait -PassThru
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { exit 1 }
-
       - name: Build the installer with Inno Setup
         shell: pwsh
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=${{ steps.version.outputs.version }}" packaging\vocab.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
-
       - uses: actions/upload-artifact@v4
         with:
-          name: VocabSetup-${{ steps.version.outputs.version }}
+          name: Vocab-${{ steps.version.outputs.version }}-windows
           path: desktop/dist/VocabSetup-*.exe
           retention-days: 14
 
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
-        uses: softprops/action-gh-release@v2
+  macos:
+    needs: database
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: apple-silicon
+            runner: macos-14         # arm64 (M1 and newer)
+          - arch: intel
+            runner: macos-15-intel   # x86_64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: desktop/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pyinstaller
+      - uses: actions/download-artifact@v4
+        with:
+          name: bhsa-database
+          path: desktop/data
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/desktop-v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/desktop-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(python -c 'import vocab; print(vocab.__version__)')-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build Vocab.app with PyInstaller
+        run: pyinstaller packaging/vocab.spec --noconfirm --distpath dist --workpath build
+      - name: Self-test the built app
+        run: |
+          dist/Vocab.app/Contents/MacOS/Vocab --self-test selftest.txt; code=$?
+          cat selftest.txt
+          exit $code
+      - name: Build the disk image
+        run: |
+          mkdir -p dmg
+          cp -R dist/Vocab.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Vocab" -srcfolder dmg -ov -format UDZO \
+            "dist/Vocab-${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocab-${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}
+          path: desktop/dist/Vocab-*.dmg
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Vocab-*
+          path: builds
+          merge-multiple: true
+      - name: Version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/desktop-v}" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
         with:
           name: Vocab ${{ steps.version.outputs.version }}
-          files: desktop/dist/VocabSetup-*.exe
+          files: builds/*
           body: |
-            Windows installer for Vocab, the Biblical Hebrew vocabulary trainer.
-            Download VocabSetup-${{ steps.version.outputs.version }}.exe and run it; no Python needed.
+            Vocab, the Biblical Hebrew vocabulary trainer. No Python needed.
+
+            **Windows:** download `VocabSetup-${{ steps.version.outputs.version }}.exe` and run it.
             Windows may warn that the publisher is unknown, because the installer is not code-signed:
             choose "More info" → "Run anyway".
+
+            **Mac:** download the `.dmg` for your Mac (`apple-silicon` for M1 and newer, `intel` for
+            older Macs; see Apple menu → About This Mac), open it and drag Vocab to Applications.
+            The app is not notarized by Apple, so the first time macOS says it can't verify it:
+            open System Settings → Privacy & Security, scroll down and click "Open Anyway".

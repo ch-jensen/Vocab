@@ -339,3 +339,17 @@ def test_several_chapter_ranges_in_one_book(store):
         chapter = store.con.execute("SELECT chapter FROM bhsa.verses v JOIN bhsa.words w "
                                     "USING (verse_id) WHERE w.node = ?", (node,)).fetchone()[0]
         assert chapter in (1, 50)
+
+
+def test_user_data_dir_per_system(monkeypatch, tmp_path):
+    import sys
+    from pathlib import Path
+    from vocab import store as store_mod
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert store_mod.user_data_dir() == Path.home() / "Library" / "Application Support" / "Vocab"
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    assert store_mod.user_data_dir() == tmp_path / "Vocab"
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    assert store_mod.default_user_db() == tmp_path / "Roaming" / "Vocab" / "user.sqlite"

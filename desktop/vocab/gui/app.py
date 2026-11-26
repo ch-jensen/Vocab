@@ -1,6 +1,6 @@
 """Main window and entry point of the desktop app.
 
-    python -m vocab.gui                    # uses %APPDATA%\\Vocab\\user.sqlite
+    python -m vocab.gui                    # progress in the user data folder (store.user_data_dir)
     python -m vocab.gui --user-db test.sqlite
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtGui import QAction, QFontDatabase, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox,
                                QStackedWidget)
@@ -181,6 +181,40 @@ class MainWindow(QMainWindow):
         self.home.refresh()
 
 
+class VocabApplication(QApplication):
+    """QApplication that also receives files opened from the Finder on macOS.
+
+    On Windows a double-clicked .vocabdeck file arrives as a command-line
+    argument; on macOS it arrives as a QFileOpenEvent, also while the app is
+    already running.
+    """
+
+    def __init__(self, argv):
+        super().__init__(argv)
+        self.window: MainWindow | None = None
+        self.pending: list[str] = []
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.FileOpen:
+            path = event.file()
+            if path.lower().endswith(".vocabdeck"):
+                self.open_deck_file(path)
+            return True
+        return super().event(event)
+
+    def open_deck_file(self, path: str) -> None:
+        if self.window is None:
+            self.pending.append(path)          # imported once the window exists
+        else:
+            QTimer.singleShot(0, lambda: self.window.home.import_deck_file(path))
+
+    def set_window(self, window: "MainWindow") -> None:
+        self.window = window
+        for path in self.pending:
+            self.open_deck_file(path)
+        self.pending.clear()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vocab")
     ap.add_argument("--user-db")
@@ -188,10 +222,10 @@ def main(argv=None) -> int:
     ap.add_argument("deck_file", nargs="?",
                     help="a .vocabdeck file to import (e.g. when opened from Explorer)")
     ap.add_argument("--self-test", metavar="REPORT",
-                    help="check that the app works (used after building the .exe) and exit")
+                    help="check that the app works (used after building the app) and exit")
     args, qt_args = ap.parse_known_args(argv)
 
-    app = QApplication([sys.argv[0], *qt_args])
+    app = VocabApplication([sys.argv[0], *qt_args])
     configure(app)
     if args.self_test:
         return self_test(app, args.self_test, args.bhsa_db)
@@ -202,8 +236,9 @@ def main(argv=None) -> int:
         return 1
     window = MainWindow(store)
     window.show()
-    if args.deck_file:
-        QTimer.singleShot(0, lambda: window.home.import_deck_file(args.deck_file))
+    if args.deck_file and args.deck_file.lower().endswith(".vocabdeck"):
+        app.open_deck_file(args.deck_file)
+    app.set_window(window)
     code = app.exec()
     store.close()
     return code
@@ -212,7 +247,7 @@ def main(argv=None) -> int:
 def self_test(app: QApplication, report: str, bhsa_db: str | None) -> int:
     """Exercise the main parts without showing a window; write OK or the error to `report`.
 
-    A windowed .exe has no console, so the result goes to a file.
+    A windowed app has no console, so the result goes to a file.
     """
     import tempfile
     import traceback

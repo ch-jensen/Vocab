@@ -135,7 +135,7 @@ def main(argv=None) -> None:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stdin.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(prog="python -m vocab")
-    ap.add_argument("--user-db", help="user database (default: %%APPDATA%%\\Vocab\\user.sqlite)")
+    ap.add_argument("--user-db", help="user database (default: Vocab/user.sqlite in the system's app data folder)")
     ap.add_argument("--bhsa-db", help="BHSA database (default: desktop\\data\\bhsa_vocab.sqlite)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
