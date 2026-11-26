@@ -31,3 +31,32 @@ The database is generated, so it isn't committed.
 | `meta` | schema version, BHSA version, build time, licence |
 
 Data: BHSA by the ETCBC, licensed CC BY-NC 4.0, so the app must stay non-commercial and credit the ETCBC.
+
+# Phase 2: the engine (`vocab/`)
+
+```
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
+.venv\Scripts\python -m pytest
+```
+
+| Module | Purpose |
+|---|---|
+| `store.py` | The user database (`%APPDATA%\Vocab\user.sqlite`) with the BHSA database attached read-only as `bhsa` |
+| `decks.py` | Deck definitions (`DeckConfig`): a predefined plan or filters, and the SQL that turns them into cards and occurrences |
+| `occurrences.py` | Chooses which attested form to show: forms not seen yet first, weighted by frequency |
+| `answers.py` | Answer checking (several glosses, parentheses, a leading "to", typos) and mapping to FSRS ratings using correctness and response time |
+| `session.py` | The daily queue (learning → due reviews → new cards, with daily limits; the day starts at 04:00) and FSRS scheduling |
+| `migrate.py` | Imports `*_score.csv` files from the notebook version |
+| `cli.py` | A command-line study loop for trying it out: `python -m vocab --help` |
+
+**Cards.** A card is a lexeme (stem `*`) or, with `split_stems`, a lexeme plus a verbal stem. The
+review state is shared by all decks, so a word learned in one deck counts in every other deck.
+Each review shows a different attested occurrence in its clause.
+
+**Ratings.** Wrong → Again; correct with a typo, or slower than 2 × your median time → Hard;
+faster than 0.5 × your median time → Easy (never on a word's first showing); otherwise Good.
+Self-grading (`study --self`) works like Anki's "show answer" mode.
+
+**Not yet done.** Fitting FSRS parameters to a user's own history (the `fsrs_parameters` meta
+key is read but nothing writes it yet), statistics, and the desktop UI.

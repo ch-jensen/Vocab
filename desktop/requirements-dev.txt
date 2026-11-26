@@ -1,0 +1,2 @@
+pytest
+text-fabric  # only for build_db.py
