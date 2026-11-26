@@ -10,9 +10,11 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButt
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..decks import Deck
-from ..session import Outcome, StudyItem, StudySession
+from ..answers import split_glosses
+from ..session import Outcome, StudyItem, StudySession, expected_gloss
 from ..store import Store
 from .counts import CountsBar
+from .gloss_dialog import GlossDialog
 from .common import (ACCENT, BAD, GOOD, MUTED, POS_LABELS, TENSE_LABELS, hebrew_font,
                      interval_text, stem_label)
 
@@ -124,6 +126,7 @@ class StudyPage(QWidget):
         self.facts = QLabel()
         self.facts.setAlignment(Qt.AlignCenter)
         self.facts.setTextFormat(Qt.RichText)
+        self.facts.linkActivated.connect(self._link)
         self.facts.setWordWrap(True)
 
         line = QFrame()
@@ -305,7 +308,28 @@ class StudyPage(QWidget):
         if outcome is not None:
             lines.append(f'<span style="color:{MUTED}">{RATING_LABELS[outcome.rating]} → '
                          f'next time in {interval_text(outcome.due)}</span>')
+        lines.append(f'<a href="edit-gloss">Edit gloss ({html.escape(self.session.cfg.gloss_language)})…</a>')
         self.facts.setText("<br>".join(lines))
+        self._outcome = outcome
+
+    def _link(self, href: str) -> None:
+        if href == "edit-gloss" and self.item is not None:
+            self.edit_gloss()
+
+    def edit_gloss(self) -> None:
+        item = self.item
+        language = self.session.cfg.gloss_language
+        if not GlossDialog(self.store, item.key.lex_id, language, self).exec():
+            return
+        item.gloss = expected_gloss(self.store.glosses(item.key.lex_id, language),
+                                    item.stem, item.key.stem)
+        item.expected = split_glosses(item.gloss)
+        if self.controls.currentIndex() == 3:       # typed answer already graded
+            self.feedback.setText(f'<span style="font-size:16pt;">{html.escape(item.gloss)}</span>'
+                                  f'<br><span style="color:{MUTED}">Gloss updated.</span>')
+        else:
+            self.feedback.setText(f'<span style="font-size:18pt;">{html.escape(item.gloss)}</span>')
+        self._show_facts(self._outcome)
 
     # --- keys ------------------------------------------------------------------
     def _enter(self) -> None:

@@ -10,13 +10,15 @@ import argparse
 import sys
 
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QApplication, QFileDialog, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox,
                                QStackedWidget)
 
 from .. import __version__
+from .. import glosses
 from ..migrate import import_score_csv
 from ..store import Store
 from .home import HomePage
+from .stats_page import StatsPage
 from .study import StudyPage
 
 # The base font size is set with QApplication.setFont, not here: a font size in
@@ -33,6 +35,10 @@ QPushButton:hover { border-color: #b7791f; }
 QPushButton:focus { border: 2px solid #b7791f; }
 QPushButton:disabled { color: #a0aec0; }
 QPushButton:flat { border: none; background: transparent; }
+QProgressBar { background: #e8e7e2; border: none; border-radius: 5px; }
+QProgressBar::chunk { background: #2a78d6; border-radius: 5px; }
+QFrame#tile { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; }
+QLabel#tileValue { font-size: 20pt; font-weight: 600; }
 QTableWidget { font-size: 12pt; selection-background-color: #fbe3b0; selection-color: #1a202c; }
 """
 
@@ -68,6 +74,10 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         self.pages.addWidget(self.home)
         self.pages.addWidget(self.study)
+        self.stats = StatsPage(store)
+        self.pages.addWidget(self.stats)
+        self.stats.finished.connect(self.show_home)
+        self.home.stats_requested.connect(self.show_stats)
         self.setCentralWidget(self.pages)
 
         self.home.study_requested.connect(self.start_study)
@@ -77,6 +87,12 @@ class MainWindow(QMainWindow):
         imp = QAction("&Import scores from the notebook version…", self)
         imp.triggered.connect(self.import_scores)
         file_menu.addAction(imp)
+        imp_gloss = QAction("Import &gloss file…", self)
+        imp_gloss.triggered.connect(self.import_glosses)
+        file_menu.addAction(imp_gloss)
+        exp_gloss = QAction("&Export glosses…", self)
+        exp_gloss.triggered.connect(self.export_glosses)
+        file_menu.addAction(exp_gloss)
         file_menu.addSeparator()
         quit_action = QAction("&Quit", self)
         quit_action.setShortcut(QKeySequence.Quit)
@@ -92,6 +108,39 @@ class MainWindow(QMainWindow):
     def show_home(self) -> None:
         self.home.refresh()
         self.pages.setCurrentWidget(self.home)
+
+    def show_stats(self) -> None:
+        self.stats.refresh()
+        self.pages.setCurrentWidget(self.stats)
+
+    def import_glosses(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import gloss file", "", "Gloss files (*_glosses.csv);;CSV files (*.csv)")
+        if not path:
+            return
+        try:
+            r = glosses.import_csv(self.store, path)
+        except (ValueError, OSError, UnicodeDecodeError) as exc:
+            QMessageBox.warning(self, "Import glosses", f"Could not read the file: {exc}")
+            return
+        QMessageBox.information(
+            self, "Import glosses",
+            f"{r.glosses} {r.language} glosses imported"
+            + (f"; {r.unknown} words were not found" if r.unknown else "")
+            + f".\n\nChoose “{r.language}” as gloss language in a deck's Study settings.")
+        self.home.refresh()
+
+    def export_glosses(self) -> None:
+        languages = self.store.gloss_languages()
+        language, ok = QInputDialog.getItem(self, "Export glosses", "Gloss language:",
+                                            languages, 0, False)
+        if not ok:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export glosses", f"{language}_glosses.csv",
+                                              "CSV files (*.csv)")
+        if path:
+            n = glosses.export_csv(self.store, language, path)
+            QMessageBox.information(self, "Export glosses", f"{n} words written to {path}.")
 
     def start_study(self, deck) -> None:
         self.pages.setCurrentWidget(self.study)

@@ -18,6 +18,7 @@ from .deck_editor import DeckEditor
 
 class HomePage(QWidget):
     study_requested = Signal(object)   # Deck
+    stats_requested = Signal()
 
     def __init__(self, store: Store, parent=None):
         super().__init__(parent)
@@ -56,6 +57,9 @@ class HomePage(QWidget):
 
         buttons = QHBoxLayout()
         buttons.addWidget(self.study_btn)
+        stats_btn = QPushButton("Statistics")
+        stats_btn.clicked.connect(self.stats_requested.emit)
+        buttons.addWidget(stats_btn)
         buttons.addStretch()
         buttons.addWidget(new_btn)
         buttons.addWidget(self.edit_btn)

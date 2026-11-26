@@ -89,3 +89,15 @@ Hebrew plan decks have 8,439 words rather than 8,522.
 **Anaconda.** Under Anaconda's Python, PySide6 6.10+ fails with "DLL load failed", because
 Anaconda loads an older Microsoft C++ runtime. That's why PySide6 is pinned to 6.9.2. For the
 installer build (Phase 5), a python.org Python is the safer choice.
+
+# Phase 4: statistics, personal scheduling and glosses
+
+| Module | Purpose |
+|---|---|
+| `stats.py` / `gui/stats_page.py` | The **Statistics** screen (button on the deck list): words learned, in learning, reviews today, share remembered over the last 30 days, study streak; **how much of the text you know**, overall and per book; progress per deck; reviews per day over the last 30 days and words due over the next 30 days |
+| `optimize.py` | **Fit to my answers**: fits the FSRS parameters to your own review history with fsrs-rs, the Rust implementation Anki uses, via `fsrs-rs-python` (0.4 MB, no PyTorch). Needs 400 reviews, and the fitted parameters are only kept if they predict your answers better than the current ones. Words imported from the notebook version are left out of the fitting |
+| `glosses.py` / `gui/gloss_dialog.py` | **Edit gloss…** on the study screen, after the answer: your own glosses (general and per stem) override the built-in ones; leave a field empty to go back to the built-in gloss. **File → Import gloss file…** adds a `<Language>_glosses.csv` (the notebook layout), so a new gloss language needs no rebuild; **File → Export glosses…** writes all glosses in a language, yours included, in the same layout |
+| `gui/charts.py` | A small column chart drawn with QPainter, with the exact value on hover |
+
+A word counts as *learned* once it has graduated from learning. "How much of the text you know"
+counts word occurrences in the Bible whose word is learned.

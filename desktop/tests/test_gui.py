@@ -177,3 +177,47 @@ def test_counts_bar_and_tooltips(app, store):
     win.show_home()
     assert win.home.table.item(0, 2).text() == "0 (+1)"
     assert win.home.table.horizontalHeaderItem(2).toolTip() == bar.learning.toolTip()
+
+
+def test_stats_page(app, store):
+    from fsrs import Rating
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "S", DeckConfig(plan_id="hebrew-frequency", new_per_day=2))
+    win = MainWindow(store)
+    win.start_study(deck)
+    win.study.session.rate(win.study.item, Rating.Easy)     # graduate 'and'
+    win.show_stats()
+    texts = " ".join(w.text() for w in win.stats.body.findChildren(type(win.study.feedback)))
+    assert "1" in texts and "words learned" in texts
+    assert "% " in texts or "%</span>" in texts           # coverage hero
+    assert not win.stats.fit_btn.isEnabled()                 # too few reviews to fit
+
+
+def test_gloss_dialog_from_study(app, store):
+    from vocab.gui.app import MainWindow
+    from vocab.gui.gloss_dialog import GlossDialog
+    deck = decks.create_deck(store, "G", DeckConfig(pos=["verb"], rank_max=40, new_per_day=1))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    page.answer.setText("speak")
+    page._enter()
+    assert "✗" in page.feedback.text()
+    assert "edit-gloss" in page.facts.text()
+    dlg = GlossDialog(store, "hbo:>MR[", "English")
+    assert dlg.fields["default"].placeholderText() == "say"
+    assert "qal" in dlg.fields
+    dlg.fields["default"].setText("say, speak")
+    dlg.save()
+    assert store.glosses("hbo:>MR[", "English")["default"] == "say, speak"
+    # Saving the built-in text again removes the user's own entry.
+    dlg2 = GlossDialog(store, "hbo:>MR[", "English")
+    assert dlg2.fields["default"].text() == "say, speak"
+    dlg2.fields["default"].setText("say")
+    dlg2.save()
+    assert store.con.execute("SELECT COUNT(*) FROM user_glosses").fetchone()[0] == 0
+
+
+def test_bar_chart_scale():
+    from vocab.gui.charts import nice_max
+    assert [nice_max(v) for v in (0, 1, 3, 7, 12, 180, 999)] == [1, 1, 5, 10, 20, 200, 1000]
