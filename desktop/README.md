@@ -174,7 +174,7 @@ message. The installer registers `.vocabdeck`, so double-clicking a file starts 
 
 The same app runs on macOS; GitHub Actions builds it on Apple's runners, so no Mac is needed to
 release it. Each release has two disk images: `Vocab-<version>-macos-apple-silicon.dmg` (M1 and
-newer, built on `macos-14`) and `Vocab-<version>-macos-intel.dmg` (built on `macos-15-intel`). The
+newer, built on `macos-15`) and `Vocab-<version>-macos-intel.dmg` (built on `macos-15-intel`). The
 disk image holds `Vocab.app` and a link to *Applications* to drag it onto.
 
 | What | Where |
