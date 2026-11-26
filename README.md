@@ -96,7 +96,7 @@ code and build instructions are in [`desktop/`](desktop/README.md).
 
 ## Licence
 
-Vocab is licensed under the
+Vocab is © 2020–2026 Christian Canu Højgaard and licensed under the
 **[Creative Commons Attribution-NonCommercial 4.0 International licence (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/)**,
 the licence of the BHSA 2021 data it is built on. See [LICENSE](LICENSE).
 
