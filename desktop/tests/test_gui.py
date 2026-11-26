@@ -71,8 +71,11 @@ def test_self_graded_flow(app, store):
     page._enter()                                   # show answer
     assert page.controls.currentIndex() == 2
     assert "min" in page.rate_buttons[Rating.Again].text()
+    first = page.item
     page.rate(Rating.Good)
     assert store.con.execute("SELECT rating FROM reviews").fetchone()[0] == Rating.Good
+    assert page.item is None or page.item is not first     # straight on, no Next step
+    assert page.controls.currentIndex() != 3
 
 
 def test_deck_editor_creates_deck(app, store):
@@ -133,7 +136,8 @@ def test_return_key_self_graded(app, store):
     QTest.keyClick(page.show_btn, Qt.Key_Return)    # show answer
     assert page.controls.currentIndex() == 2 and page.item is first
     QTest.keyClick(page.rate_buttons[next(iter(page.rate_buttons))], Qt.Key_3)
-    assert page.controls.currentIndex() == 3 and page.feedback.text()
+    assert page.item is not first                   # rating goes straight to the next word
+    assert page.controls.currentIndex() == 1 and page.feedback.text() == ""
 
 
 def test_finished_for_now_screen(app, store):
@@ -145,8 +149,7 @@ def test_finished_for_now_screen(app, store):
     win.start_study(deck)
     page = win.study
     page._enter()                       # show answer
-    page.rate(Rating.Again)             # due again in 1 minute
-    page._enter()                       # next: nothing is due yet
+    page.rate(Rating.Again)             # due again in 1 minute; nothing else is due
     assert page.item is None
     assert page.done.isVisibleTo(page)
     assert "Finished for now" in page.done_title.text()

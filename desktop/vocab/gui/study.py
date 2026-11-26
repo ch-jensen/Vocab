@@ -284,8 +284,9 @@ class StudyPage(QWidget):
     def rate(self, rating: Rating) -> None:
         if self.item is None or self.answered or self.controls.currentIndex() != 2:
             return
-        outcome = self.session.rate(self.item, rating, self._elapsed())
-        self._after_answer(outcome)
+        # As in Anki: the gloss was already shown, so rating goes straight on.
+        self.session.rate(self.item, rating, self._elapsed())
+        self.next_card()
 
     def _after_answer(self, outcome: Outcome) -> None:
         self.answered = True
