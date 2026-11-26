@@ -79,9 +79,13 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
 ## Features
 
 * **Decks.** Predefined plans for Hebrew and Aramaic, ordered by frequency, or your own selection
-  by part of speech, frequency rank, verbal stem, tense, pronominal suffix, or book and chapters
-  (for example the vocabulary of Jonah, or the verbs in the piel). Optionally, each verbal stem can
-  be learned as a separate word. Progress is shared between decks.
+  by part of speech, frequency rank, verbal stem, tense, pronominal suffix, and books with their own
+  chapters (for example Genesis 1–11 and 37–50 together with Jonah, or the verbs in the piel).
+  Optionally, each verbal stem can be learned as a separate word. Progress is shared between decks.
+* **Sharing decks.** Export a deck to a `.vocabdeck` file and import it on another computer, or give
+  it to your students (double-clicking the file imports it). The file contains the deck's settings
+  and your own glosses for its words, but not your learning progress; on import, the recipient's
+  own glosses are kept.
 * **Statistics.** How much of the text you know, overall and for each book; progress per deck;
   your reviews over the last 30 days and the words due in the next 30.
 * **Personal scheduling.** After 400 reviews, FSRS can be fitted to your own answers, so intervals

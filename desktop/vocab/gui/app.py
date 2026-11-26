@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QFontDatabase, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox,
                                QStackedWidget)
@@ -30,6 +31,7 @@ QLabel#muted { color: #718096; }
 QFrame#rule { color: #e2e8f0; }
 QLineEdit { padding: 8px; font-size: 14pt; border: 1px solid #cbd5e0; border-radius: 6px; }
 QLineEdit:focus { border-color: #b7791f; }
+QLineEdit#chapters { padding: 0px 6px; font-size: 11pt; border-radius: 3px; }
 QPushButton { padding: 7px 16px; border: 1px solid #cbd5e0; border-radius: 6px; background: #ffffff; }
 QPushButton:hover { border-color: #b7791f; }
 QPushButton:focus { border: 2px solid #b7791f; }
@@ -96,6 +98,13 @@ class MainWindow(QMainWindow):
         imp = QAction("&Import scores from the notebook version…", self)
         imp.triggered.connect(self.import_scores)
         file_menu.addAction(imp)
+        imp_deck = QAction("Import &deck…", self)
+        imp_deck.triggered.connect(self.home.import_deck)
+        file_menu.addAction(imp_deck)
+        exp_deck = QAction("E&xport deck…", self)
+        exp_deck.triggered.connect(self.home.export_deck)
+        file_menu.addAction(exp_deck)
+        file_menu.addSeparator()
         imp_gloss = QAction("Import &gloss file…", self)
         imp_gloss.triggered.connect(self.import_glosses)
         file_menu.addAction(imp_gloss)
@@ -176,6 +185,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vocab")
     ap.add_argument("--user-db")
     ap.add_argument("--bhsa-db")
+    ap.add_argument("deck_file", nargs="?",
+                    help="a .vocabdeck file to import (e.g. when opened from Explorer)")
     ap.add_argument("--self-test", metavar="REPORT",
                     help="check that the app works (used after building the .exe) and exit")
     args, qt_args = ap.parse_known_args(argv)
@@ -191,6 +202,8 @@ def main(argv=None) -> int:
         return 1
     window = MainWindow(store)
     window.show()
+    if args.deck_file:
+        QTimer.singleShot(0, lambda: window.home.import_deck_file(args.deck_file))
     code = app.exec()
     store.close()
     return code

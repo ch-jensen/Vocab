@@ -33,6 +33,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=LICENSES.txt
+ChangesAssociations=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -49,6 +50,13 @@ Source: "LICENSES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\Vocab"; Filename: "{app}\Vocab.exe"
 Name: "{group}\{cm:UninstallProgram,Vocab}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Vocab"; Filename: "{app}\Vocab.exe"; Tasks: desktopicon
+
+[Registry]
+; Double-clicking a .vocabdeck file imports the deck into Vocab.
+Root: HKA; Subkey: "Software\Classes\.vocabdeck"; ValueType: string; ValueName: ""; ValueData: "Vocab.Deck"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Vocab.Deck"; ValueType: string; ValueName: ""; ValueData: "Vocab deck"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Vocab.Deck\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\Vocab.exe,0"
+Root: HKA; Subkey: "Software\Classes\Vocab.Deck\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Vocab.exe"" ""%1"""
 
 [Run]
 Filename: "{app}\Vocab.exe"; Description: "{cm:LaunchProgram,Vocab}"; Flags: nowait postinstall skipifsilent

@@ -153,3 +153,19 @@ Bump `__version__` in `vocab/__init__.py` and the numbers in `packaging/version_
 **Code signing.** The installer isn't signed, so Windows SmartScreen warns about an unknown
 publisher ("More info" → "Run anyway"). Signing needs a code-signing certificate, for example via
 Azure Trusted Signing; it can be added to the workflow later.
+
+# Later additions
+
+**Chapters per book.** In the deck editor's *Forms* tab, every book has its own chapter field:
+`1-11, 37-50`, `3`, or empty for the whole book. Typing chapters ticks the book; invalid input is
+marked in red and explained. A deck can combine passages from several books
+(`DeckConfig.passages` holds one `Passage` per chapter range; `parse_chapters` and
+`format_chapters` in `decks.py` convert to and from the text form).
+
+**Exporting and importing decks** (`deckfile.py`). *Export…* / *Import…* on the deck list (also in the
+File menu) save and load a deck as a `.vocabdeck` file: JSON with the deck's settings, the BHSA
+version, and the user's own glosses for the deck's words in its gloss language. Learning progress is
+not included. On import, the user's own glosses are never overwritten, a name already in use gets a
+number, and files from a newer app version, unknown plans or unknown books are refused with a
+message. The installer registers `.vocabdeck`, so double-clicking a file starts Vocab and imports it
+(`Vocab.exe deck.vocabdeck`).
