@@ -12,6 +12,7 @@ from .. import decks
 from ..session import StudySession
 from ..store import Store
 from .common import BAD, GOOD
+from .counts import DUE_TIP, LEARNING_TIP, NEW_TIP, learning_text
 from .deck_editor import DeckEditor
 
 
@@ -34,6 +35,8 @@ class HomePage(QWidget):
             self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.Fixed)
             self.table.setColumnWidth(col, 110)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
+        for col, tip in ((1, NEW_TIP), (2, LEARNING_TIP), (3, DUE_TIP)):
+            self.table.horizontalHeaderItem(col).setToolTip(tip)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -78,12 +81,14 @@ class HomePage(QWidget):
         self.table.setRowCount(len(self._decks))
         for row, deck in enumerate(self._decks):
             c = StudySession(self.store, deck).counts()
-            cells = [deck.name, str(c.new), str(c.learning), str(c.review)]
+            cells = [deck.name, str(c.new), learning_text(c), str(c.review)]
             colours = [None, GOOD, BAD, None]
             for col, (text, colour) in enumerate(zip(cells, colours)):
                 item = QTableWidgetItem(text)
                 if col:
                     item.setTextAlignment(Qt.AlignCenter)
+                if col:
+                    item.setToolTip((NEW_TIP, LEARNING_TIP, DUE_TIP)[col - 1])
                 if colour and text != "0":
                     item.setForeground(QColor(colour))
                 self.table.setItem(row, col, item)

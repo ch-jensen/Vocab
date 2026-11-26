@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButt
 from ..decks import Deck
 from ..session import Outcome, StudyItem, StudySession
 from ..store import Store
+from .counts import CountsBar
 from .common import (ACCENT, BAD, GOOD, MUTED, POS_LABELS, TENSE_LABELS, hebrew_font,
                      interval_text, stem_label)
 
@@ -45,8 +46,7 @@ class StudyPage(QWidget):
         back.clicked.connect(self.finished.emit)
         self.deck_label = QLabel()
         self.deck_label.setObjectName("subtitle")
-        self.counts = QLabel()
-        self.counts.setTextFormat(Qt.RichText)
+        self.counts = CountsBar()
         header = QHBoxLayout()
         header.addWidget(back)
         header.addWidget(self.deck_label)
@@ -187,10 +187,7 @@ class StudyPage(QWidget):
         self.next_card()
 
     def _set_counts(self) -> None:
-        c = self.session.counts()
-        self.counts.setText(f'<span style="color:{GOOD}">{c.new} new</span> · '
-                            f'<span style="color:{BAD}">{c.learning} learning</span> · '
-                            f'{c.review} due')
+        self.counts.set_counts(self.session.counts())
 
     def next_card(self) -> None:
         self._set_counts()

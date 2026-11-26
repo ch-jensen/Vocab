@@ -158,3 +158,22 @@ def test_finished_for_now_screen(app, store):
     assert page.wait_timer.isActive()
     page._learning_due()                # what the timer does after a minute
     assert page.continue_btn.isEnabled()
+
+
+def test_counts_bar_and_tooltips(app, store):
+    from fsrs import Rating
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "Bar", DeckConfig(plan_id="hebrew-frequency",
+                                                      answer_mode="self", new_per_day=3))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    page._enter()
+    page.rate(Rating.Again)                         # wrong: returns in 1 minute
+    bar = page.counts
+    assert bar.learning.text() == "0 (1) learning"
+    assert bar.new.text() == "2 new"
+    assert "later today" in bar.learning.toolTip() and bar.due.toolTip()
+    win.show_home()
+    assert win.home.table.item(0, 2).text() == "0 (1)"
+    assert win.home.table.horizontalHeaderItem(2).toolTip() == bar.learning.toolTip()

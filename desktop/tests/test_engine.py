@@ -291,3 +291,14 @@ def test_next_learning_due_only_today(store, clock):
     assert s.next_learning_due() is None
     s.rate(s.next_item(), Rating.Easy)          # graduates: due in days, not today
     assert s.next_learning_due() is None
+
+
+def test_learning_count_includes_later_today(store, clock):
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=3), clock)
+    s.rate(s.next_item(), Rating.Again)       # back in 1 min
+    s.rate(s.next_item(), Rating.Good)        # back in 10 min
+    c = s.counts()
+    assert (c.learning, c.learning_today) == (0, 2)   # a wrong answer is counted at once
+    clock.advance(minutes=1)
+    c = s.counts()
+    assert (c.learning, c.learning_today) == (1, 2)
