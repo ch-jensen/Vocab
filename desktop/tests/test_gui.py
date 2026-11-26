@@ -71,7 +71,7 @@ def test_self_graded_flow(app, store):
     page._enter()                                   # show answer
     assert page.controls.currentIndex() == 2
     assert "min" in page.rate_buttons[Rating.Again].text()
-    page._rate_key(Rating.Good)
+    page.rate(Rating.Good)
     assert store.con.execute("SELECT rating FROM reviews").fetchone()[0] == Rating.Good
 
 
@@ -94,8 +94,43 @@ def test_deck_editor_creates_deck(app, store):
 
 def test_deck_editor_round_trip(app, store):
     from vocab.gui.deck_editor import DeckEditor
-    cfg = DeckConfig(pos=["subs", "verb"],   # in the order the editor lists them rank_min=10, rank_max=500, stems=["qal", "piel"],
+    # pos in the order the editor lists them
+    cfg = DeckConfig(pos=["subs", "verb"], rank_min=10, rank_max=500, stems=["qal", "piel"],
                      tenses=["wayq"], suffix="without", split_stems=True, gloss_language="Danish",
                      new_per_day=15, answer_mode="self", show_lexeme=True)
     deck = decks.create_deck(store, "Mixed", cfg)
     assert DeckEditor(store, deck).config() == cfg
+
+
+def test_return_key_shows_feedback(app, store):
+    """A real Return key press in the answer box must show feedback, not skip ahead."""
+    from PySide6.QtTest import QTest
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "Keys", DeckConfig(pos=["verb"], rank_max=40, new_per_day=2))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    first = page.item
+    QTest.keyClicks(page.answer, "say")
+    QTest.keyClick(page.answer, Qt.Key_Return)
+    assert page.item is first                       # still on the same word
+    assert page.controls.currentIndex() == 3
+    assert "Correct" in page.feedback.text()
+    QTest.keyClick(page.next_btn, Qt.Key_Return)    # Return again: next word
+    assert page.item is not first
+    assert page.feedback.text() == ""
+
+
+def test_return_key_self_graded(app, store):
+    from PySide6.QtTest import QTest
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "SelfKeys", DeckConfig(plan_id="hebrew-frequency",
+                                                           answer_mode="self", new_per_day=2))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    first = page.item
+    QTest.keyClick(page.show_btn, Qt.Key_Return)    # show answer
+    assert page.controls.currentIndex() == 2 and page.item is first
+    QTest.keyClick(page.rate_buttons[next(iter(page.rate_buttons))], Qt.Key_3)
+    assert page.controls.currentIndex() == 3 and page.feedback.text()

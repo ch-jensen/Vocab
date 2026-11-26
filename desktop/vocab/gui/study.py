@@ -6,7 +6,6 @@ import html
 
 from fsrs import Rating
 from PySide6.QtCore import QElapsedTimer, Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
@@ -72,7 +71,6 @@ class StudyPage(QWidget):
         # Answer area: typed or self-graded
         self.answer = QLineEdit()
         self.answer.setPlaceholderText("Type the gloss and press Enter (empty = I don't know)")
-        self.answer.returnPressed.connect(self._enter)
         self.answer.setMinimumWidth(380)
         typed_row = QHBoxLayout()
         typed_row.addStretch()
@@ -153,12 +151,10 @@ class StudyPage(QWidget):
         layout.addWidget(self.done)
 
         # Keyboard
-        # Return/Enter in the answer box comes through returnPressed; elsewhere
-        # through keyPressEvent (buttons outside dialogs pass Return on).
-        # Space on a focused button clicks it.
-        QShortcut(QKeySequence(Qt.Key_Escape), self, self.finished.emit)
-        for i, rating in enumerate(Rating, start=1):
-            QShortcut(QKeySequence(str(i)), self, lambda r=rating: self._rate_key(r))
+        # All keys are handled in keyPressEvent. The answer box and the buttons
+        # pass Return/Enter on to this page, so it must be handled in one place
+        # only: handling it in QLineEdit.returnPressed as well would submit the
+        # answer and then skip straight to the next word.
 
     # --- flow ----------------------------------------------------------------
     def start(self, deck: Deck) -> None:
@@ -276,11 +272,14 @@ class StudyPage(QWidget):
             self.next_card()
 
     def keyPressEvent(self, event) -> None:
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not event.isAutoRepeat():
-            self._enter()
+        key = event.key()
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            if not event.isAutoRepeat():
+                self._enter()
+        elif key == Qt.Key_Escape:
+            self.finished.emit()
+        elif Qt.Key_1 <= key <= Qt.Key_4 and self.controls.currentIndex() == 2:
+            self.rate(Rating(key - Qt.Key_1 + 1))   # digits typed in the answer box never get here
         else:
             super().keyPressEvent(event)
 
-    def _rate_key(self, rating: Rating) -> None:
-        if self.controls.currentIndex() == 2:
-            self.rate(rating)
