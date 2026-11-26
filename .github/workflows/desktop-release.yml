@@ -1,6 +1,6 @@
 # Builds the Windows installer for the desktop app.
 #
-# Runs on every push to main that touches desktop/ (installer kept as a build
+# Runs on pull requests and pushes to main that touch desktop/ (installer kept as a build
 # artifact for 14 days), and on tags like desktop-v0.2.0, which also publish a
 # GitHub release with VocabSetup-0.2.0.exe attached.
 
@@ -11,6 +11,8 @@ on:
     branches: [main]
     paths: ["desktop/**", ".github/workflows/desktop-release.yml"]
     tags: ["desktop-v*"]
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop-release.yml"]
   workflow_dispatch:
 
 permissions:
