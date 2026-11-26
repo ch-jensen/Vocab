@@ -133,3 +133,9 @@ dmypy.json
 .pyre/
 
 *.bak
+
+# Generated desktop database
+desktop/data/
+
+# PyInstaller spec of the desktop app (other *.spec files stay ignored)
+!desktop/packaging/vocab.spec
