@@ -44,9 +44,6 @@ the word occurs, so you learn to recognise it the way you will meet it when read
 possible thanks to the BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis), a database of the
 Hebrew Bible made by the Eep Talstra Centre for Bible and Computer (ETCBC) in Amsterdam, in which
 every word is analysed.</p>
-<p>Knowing a word is not a yes-or-no matter: a word is active when you have recently recognised
-it quickly and reliably. Vocab keeps track of that for every word and asks you about the ones
-that need your attention today, starting with the most frequent words.</p>
 
 <h2>What Vocab can do</h2>
 <ul>
