@@ -18,6 +18,7 @@ from .. import __version__
 from .. import glosses
 from ..migrate import import_score_csv
 from ..store import APP_ROOT, Store
+from .about import AboutDialog
 from .home import HomePage
 from .stats_page import StatsPage
 from .study import StudyPage
@@ -59,18 +60,6 @@ def configure(app: QApplication) -> None:
     app.setFont(font)
     app.setStyleSheet(STYLE)
 
-ABOUT = f"""<h3>Vocab {__version__}</h3>
-<p>Vocabulary training for Biblical Hebrew and Aramaic with attested forms
-and FSRS scheduling.</p>
-<p><b>Data:</b> BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis) by the
-Eep Talstra Centre for Bible and Computer (ETCBC), licensed
-<a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>.
-<a href="https://github.com/ETCBC/bhsa">github.com/ETCBC/bhsa</a></p>
-<p><b>Scheduling:</b> <a href="https://github.com/open-spaced-repetition/py-fsrs">py-fsrs</a>
-and <a href="https://github.com/open-spaced-repetition/fsrs-rs-python">fsrs-rs</a>
-(MIT/BSD licences). <b>Interface:</b> Qt for Python (LGPL).
-<b>Font:</b> Ezra SIL by SIL International
-(<a href="https://openfontlicense.org">SIL Open Font License</a>).</p>"""
 
 
 class MainWindow(QMainWindow):
@@ -118,7 +107,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(quit_action)
         help_menu = self.menuBar().addMenu("&Help")
         about = QAction("&About Vocab", self)
-        about.triggered.connect(lambda: QMessageBox.about(self, "About Vocab", ABOUT))
+        about.setMenuRole(QAction.AboutRole)          # macOS: in the application menu
+        about.triggered.connect(lambda: AboutDialog(self).exec())
         help_menu.addAction(about)
 
         self.show_home()

@@ -344,3 +344,16 @@ def test_deck_editor_counts_in_background(app, store):
     assert dlg.count.text() == f"{expected} words in this deck"
     dlg._count_done(first, 1)                            # a stale result is ignored
     assert dlg.count.text() == f"{expected} words in this deck"
+
+
+def test_about_window(app):
+    from vocab import __version__
+    from vocab.gui.about import AboutDialog
+    dlg = AboutDialog()
+    assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == \
+        ["About", "How studying works", "Licence"]
+    text = [dlg.tabs.widget(i).toPlainText() for i in range(dlg.tabs.count())]
+    assert "best of Anki" in text[0] and "BHSA" in text[0]
+    assert "Again" in text[1] and "your usual time" in text[1] and "21 days" in text[1]
+    assert "Christian Canu Højgaard" in text[2] and "CC BY-NC 4.0" in text[2]
+    assert "ETCBC" in text[2]

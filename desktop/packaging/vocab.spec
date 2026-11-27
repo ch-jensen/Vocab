@@ -65,6 +65,7 @@ a = Analysis(
         (str(DB), "data"),
         (str(ROOT / "fonts"), "fonts"),
         (str(ROOT / "packaging" / "vocab.ico"), "packaging"),
+        (str(ROOT / "packaging" / "vocab-256.png"), "packaging"),   # logo in the About window
     ],
     hiddenimports=["fsrs_rs_python"],
     excludes=["tkinter", "tf", "pandas", "numpy", "matplotlib", "IPython", "pytest",
