@@ -182,7 +182,8 @@ def test_cards_graduate_and_come_back(store, clock):
     item = s.next_item()
     out = s.rate(item, Rating.Good)      # graduates
     assert out.state == State.Review
-    assert out.due - clock.now >= timedelta(days=1)
+    # Scheduled to 04:00 on a later study day.
+    assert (out.due.hour, out.due.minute) == (4, 0) and out.due > day_start(clock.now, UTC)
     assert s.next_item() is None
     clock.now = out.due + timedelta(minutes=1)
     s = session(store, None, clock)      # a new day, a new session
@@ -378,3 +379,55 @@ def test_learned_words_due_from_start_of_day(store):
     assert s.counts().review == 0
     # Words in learning still keep their exact minutes (no learn-ahead).
     assert s.next_learning_due() is None
+
+
+def test_learned_words_scheduled_at_four(store, clock):
+    """As in Anki, a learned word is scheduled to a day: 04:00 local on its due day."""
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=1), clock)
+    item = s.next_item()
+    preview = s.preview(item)
+    assert (preview[Rating.Easy].hour, preview[Rating.Easy].minute) == (4, 0)
+    assert preview[Rating.Again] == clock.now + timedelta(minutes=1)     # learning: exact time
+    out = s.rate(item, Rating.Easy)                                       # graduates at once
+    assert out.state == State.Review and out.due == preview[Rating.Easy]
+    stored = store.con.execute("SELECT due FROM cards").fetchone()[0]
+    assert stored.endswith("T04:00:00.000+00:00")
+    # Learning steps are not moved to 04:00.
+    s2 = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=2), clock, "two")
+    out2 = s2.rate(s2.next_item(), Rating.Again)
+    assert out2.due == clock.now + timedelta(minutes=1)
+
+
+def test_align_learned_due_times():
+    import sqlite3
+    from vocab.store import USER_SCHEMA, align_learned_due_times
+    con = sqlite3.connect(":memory:")
+    con.executescript(USER_SCHEMA)
+    rows = [("hbo:W", 2, "2026-11-27T19:48:00.000+00:00"),   # learned, later today -> 04:00
+            ("hbo:H", 2, "2026-11-28T03:30:00.000+00:00"),   # before 04:00: belongs to the 27th
+            ("hbo:L", 1, "2026-11-27T10:14:00.000+00:00"),   # learning: unchanged
+            ("hbo:B", 2, "2026-11-30T04:00:00.000+00:00")]   # already aligned
+    for lex, state, due in rows:
+        con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) VALUES (?, '*', ?, ?, ?)",
+                    (lex, state, due, due))
+    assert align_learned_due_times(con, UTC) == 2
+    due = dict(con.execute("SELECT lex_id, due FROM cards"))
+    assert due["hbo:W"] == "2026-11-27T04:00:00.000+00:00"
+    assert due["hbo:H"] == "2026-11-27T04:00:00.000+00:00"
+    assert due["hbo:L"] == "2026-11-27T10:14:00.000+00:00"
+    assert due["hbo:B"] == "2026-11-30T04:00:00.000+00:00"
+    assert align_learned_due_times(con, UTC) == 0                      # safe to run again
+
+
+def test_existing_database_aligned_once(tmp_path):
+    from vocab.store import parse_ts
+    path = tmp_path / "user.sqlite"
+    with Store(path) as s:                                              # new database
+        s.con.execute("DELETE FROM meta WHERE key = 'learned_due_at_day_start'")   # as before this version
+        s.con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) "
+                      "VALUES ('hbo:W', '*', 2, '2026-11-27T19:48:00.000+00:00', '2026-11-26T19:48:00.000+00:00')")
+        s.con.commit()
+    with Store(path) as s:                                              # opened by the new version
+        due = parse_ts(s.con.execute("SELECT due FROM cards").fetchone()[0]).astimezone()
+        assert (due.hour, due.minute) == (4, 0)
+        assert s.get_meta("learned_due_at_day_start") == "1"

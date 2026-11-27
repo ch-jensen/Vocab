@@ -23,7 +23,7 @@ from pathlib import Path
 from fsrs import State
 
 from .decks import ALL_STEMS
-from .store import Store, ts
+from .store import Store, day_start, ts
 
 OLD_THRESHOLD = 2.0
 MIN_STABILITY, MAX_STABILITY = 0.5, 365.0
@@ -71,7 +71,7 @@ def import_score_csv(store: Store, path: Path | str, threshold: float = OLD_THRE
         stability = min(max(old_interval_days(time_score, rep, mean_score, threshold),
                             MIN_STABILITY), MAX_STABILITY)
         difficulty = min(max(4.0 + 1.5 * (rep - 1), 1.0), 10.0)
-        due = last + timedelta(days=stability)
+        due = day_start(last + timedelta(days=stability))   # learned words: 04:00 on their day
         store.con.execute(
             "INSERT INTO cards (lex_id, stem, state, step, stability, difficulty, due, last_review, created_at) "
             "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)",

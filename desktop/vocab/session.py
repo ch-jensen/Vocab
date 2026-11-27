@@ -28,9 +28,8 @@ from fsrs import Card, Rating, Scheduler, State
 from . import answers
 from .decks import ALL_STEMS, CardKey, Deck, deck_cards, occurrences
 from .occurrences import choose_occurrence
-from .store import Store, parse_ts, ts
+from .store import DAY_ROLLOVER_HOUR, Store, day_start, parse_ts, ts  # noqa: F401 (re-exported)
 
-DAY_ROLLOVER_HOUR = 4
 NEW = 0  # state_before for a card's first review
 
 
@@ -38,13 +37,16 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def day_start(now: datetime, tz: tzinfo | None = None) -> datetime:
-    """Start of the study day containing `now` (04:00 local), in UTC."""
-    local = now.astimezone(tz)
-    start = local.replace(hour=DAY_ROLLOVER_HOUR, minute=0, second=0, microsecond=0)
-    if local < start:
-        start -= timedelta(days=1)
-    return start.astimezone(timezone.utc)
+def scheduled_due(card: Card, tz: tzinfo | None = None) -> datetime:
+    """When a card is next due, as stored.
+
+    As in Anki, a learned word (FSRS state Review) is scheduled to a day, not a
+    time: its due time is set to the start of that study day (04:00 local).
+    Words in learning keep their exact due time (1 or 10 minutes).
+    """
+    if card.state == State.Review:
+        return day_start(card.due, tz)
+    return card.due
 
 
 @dataclass
@@ -256,7 +258,7 @@ class StudySession:
         out = {}
         for rating in Rating:
             card = card_from_row(row) if row else Card(card_id=0, state=State.Learning, due=now)
-            out[rating] = self.scheduler.review_card(card, rating, now)[0].due
+            out[rating] = scheduled_due(self.scheduler.review_card(card, rating, now)[0], self.tz)
         return out
 
     # --- answering ---------------------------------------------------------
@@ -296,6 +298,7 @@ class StudySession:
             state_before = int(card.state)
 
         card, _log = self.scheduler.review_card(card, rating, now, duration_ms)
+        card.due = scheduled_due(card, self.tz)     # learned words: 04:00 on their day
         self.con.execute("""
             UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?, last_review = ?
             WHERE card_id = ?""",

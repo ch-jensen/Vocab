@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 
 USER_SCHEMA_VERSION = 1
@@ -108,6 +108,34 @@ def parse_ts(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
 
+DAY_ROLLOVER_HOUR = 4    # the study day starts at 04:00 local time, as in Anki
+
+
+def day_start(now: datetime, tz: tzinfo | None = None) -> datetime:
+    """Start of the study day containing `now` (04:00 local), in UTC."""
+    local = now.astimezone(tz)
+    start = local.replace(hour=DAY_ROLLOVER_HOUR, minute=0, second=0, microsecond=0)
+    if local < start:
+        start -= timedelta(days=1)
+    return start.astimezone(timezone.utc)
+
+
+def align_learned_due_times(con: sqlite3.Connection, tz: tzinfo | None = None) -> int:
+    """Move the due time of every learned word to 04:00 of its study day.
+
+    Learned words are scheduled to a day, as in Anki; earlier versions stored the
+    exact time of day. Safe to run again: aligned times stay the same.
+    Returns the number of words changed.
+    """
+    changed = []
+    for card_id, due in con.execute("SELECT card_id, due FROM cards WHERE state = 2"):
+        aligned = ts(day_start(datetime.fromisoformat(due), tz))
+        if aligned != due:
+            changed.append((aligned, card_id))
+    con.executemany("UPDATE cards SET due = ? WHERE card_id = ?", changed)
+    return len(changed)
+
+
 class Store:
     def __init__(self, user_db: Path | str | None = None, bhsa_db: Path | str | None = None):
         self.user_db = Path(user_db) if user_db else default_user_db()
@@ -129,6 +157,10 @@ class Store:
         self.con.executescript(USER_SCHEMA)
         self.con.execute("INSERT OR IGNORE INTO meta VALUES ('schema_version', ?)",
                          (str(USER_SCHEMA_VERSION),))
+        # Once per database: learned words from earlier versions get 04:00 on their day.
+        if self.get_meta("learned_due_at_day_start") is None:
+            align_learned_due_times(self.con)
+            self.con.execute("INSERT INTO meta VALUES ('learned_due_at_day_start', '1')")
         self.con.commit()
 
     def close(self) -> None:
