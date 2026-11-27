@@ -29,13 +29,21 @@ STYLE = """
 
 IDEA = STYLE + f"""
 <h2>The idea</h2>
-<p>Vocab combines <b>the best of Anki</b> with <b>the best of the BHSA</b>.</p>
-<p>From <b>Anki</b> it takes spaced repetition with FSRS, the scheduling algorithm Anki uses:
-each word comes back just before you would forget it, so your time goes to the words that need
-it. From the <b>BHSA</b>, the linguistic database of the Hebrew Bible made by the ETCBC, it takes
-the text itself: instead of drilling dictionary forms, Vocab shows every word <b>as it is written
-in a real verse</b>, with its prefixes, suffixes and vowels, in its clause. Each review shows
-another attested form, so you learn to recognise the word the way you will meet it when reading.</p>
+<p>Vocab brings together two things: a <b>flash card approach</b> to learning vocabulary, and
+the <b>actual text of the Hebrew Bible</b>.</p>
+<p><b>Flash cards with spaced repetition.</b> As with paper flash cards, you see a word and try
+to recall its meaning. The difference is that Vocab keeps track of how well you know each word
+and shows it again just before you would forget it: a new or difficult word comes back after a
+few minutes, a well-known word only after weeks or months. Your study time goes to the words that
+need it. The method is the one used by popular flash card programs such as Anki, and the
+scheduling is done with FSRS, the same algorithm Anki uses.</p>
+<p><b>Words as they occur in the text.</b> Ordinary flash cards show the dictionary form of a
+word. Vocab instead shows each word <b>as it is written in a real verse</b> of the Hebrew Bible,
+with its prefixes, suffixes and vowels, and in its clause. Each time, it picks another place where
+the word occurs, so you learn to recognise it the way you will meet it when reading. This is
+possible thanks to the BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis), a database of the
+Hebrew Bible made by the Eep Talstra Centre for Bible and Computer (ETCBC) in Amsterdam, in which
+every word is analysed.</p>
 <p>Knowing a word is not a yes-or-no matter: a word is active when you have recently recognised
 it quickly and reliably. Vocab keeps track of that for every word and asks you about the ones
 that need your attention today, starting with the most frequent words.</p>
