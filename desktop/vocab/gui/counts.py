@@ -10,12 +10,13 @@ from .common import BAD, GOOD
 
 NEW_TIP = ("<b>New</b>: words you haven't seen yet. The number is how many you will still "
            "get today (at most the deck's daily limit).")
-LEARNING_TIP = ("<b>Learning</b>: words you have just met or just forgotten. They come back "
+LEARNING_TIP = ("<b>Learning</b>: words you have met or forgotten today. They come back "
                 "after short steps (1 min, then 10 min) until they graduate.<br>"
                 "The first number counts those due now; the number in parentheses counts "
                 "those waiting to come back later today.")
-DUE_TIP = ("<b>Due</b>: words you have learned whose interval (days to months) has run out, "
-           "so they are up for review today. Forget one and it goes back to learning.")
+DUE_TIP = ("<b>Due</b>: everything waiting for you from earlier days: learned words whose "
+           "interval (days to months) runs out today, and words left in learning since an "
+           "earlier day. Forget one and it goes back to learning.")
 
 
 def learning_text(c: Counts) -> str:

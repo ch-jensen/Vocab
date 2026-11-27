@@ -431,3 +431,26 @@ def test_existing_database_aligned_once(tmp_path):
         due = parse_ts(s.con.execute("SELECT due FROM cards").fetchone()[0]).astimezone()
         assert (due.hour, due.minute) == (4, 0)
         assert s.get_meta("learned_due_at_day_start") == "1"
+
+
+def test_learning_left_from_yesterday_counts_as_due(store):
+    """At the start of a day, words left in learning since yesterday are shown as due."""
+    yesterday = datetime(2026, 11, 26, 18, 0, tzinfo=UTC)
+    clock = Clock(yesterday)
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=2), clock)
+    s.rate(s.next_item(), Rating.Again)          # in learning, due 18:01 yesterday
+    s.rate(s.next_item(), Rating.Good)           # in learning, due 18:10 yesterday
+    c = s.counts()
+    assert (c.learning, c.learning_later, c.review) == (0, 2, 0)
+    # Next morning: both are due, none are "learning".
+    clock.now = datetime(2026, 11, 27, 8, 0, tzinfo=UTC)
+    s = session(store, None, clock)
+    c = s.counts()
+    assert (c.new, c.learning, c.learning_later, c.review) == (2, 0, 0, 2)
+    item = s.next_item()
+    assert not item.is_new                       # due words come before new ones
+    out = s.rate(item, Rating.Again)             # answered today: an ordinary learning step
+    c = s.counts()
+    assert (c.learning, c.learning_later, c.review) == (0, 1, 1)
+    clock.advance(minutes=1)
+    assert s.counts().learning == 1
