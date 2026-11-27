@@ -9,7 +9,9 @@ learning will be due again in a few minutes; the screen then says when (no
 "learn ahead": cards are never shown before they are due).
 The same lexeme is not shown twice in a row if anything else is available.
 
-The day starts at 04:00 local time, as in Anki.
+The day starts at 04:00 local time, as in Anki. As in Anki, learned words are
+due for the whole study day they fall on: a word due today at 19:48 can be
+reviewed from 04:00. Words in learning keep their exact times (1 or 10 minutes).
 """
 
 from __future__ import annotations
@@ -155,7 +157,7 @@ class StudySession:
         new_today, reviews_today = self._done_today()
         learning, review, learning_later = self.con.execute("""
             SELECT COALESCE(SUM(c.state IN (1, 3) AND c.due <= :now), 0),
-                   COALESCE(SUM(c.state = 2 AND c.due <= :now), 0),
+                   COALESCE(SUM(c.state = 2 AND c.due < :eod), 0),      -- due any time today
                    COALESCE(SUM(c.state IN (1, 3) AND c.due > :now AND c.due < :eod), 0)
             FROM cards c JOIN temp.deck_keys k ON k.lex_id = c.lex_id AND k.stem = c.stem
             """, {"now": now, "eod": end_of_day}).fetchone()
@@ -168,12 +170,15 @@ class StudySession:
                       review=min(review, max(self.cfg.max_reviews_per_day - reviews_today, 0)),
                       learning_later=learning_later)
 
-    def _due_cards(self, states: tuple[int, ...], until: datetime, limit: int) -> list[sqlite3.Row]:
+    def _due_cards(self, states: tuple[int, ...], until: datetime, limit: int,
+                   before: bool = False) -> list[sqlite3.Row]:
+        """Cards in `states` due at or before `until` (strictly before, if `before`)."""
         marks = ",".join("?" * len(states))
+        op = "<" if before else "<="
         return self.con.execute(f"""
             SELECT c.* FROM cards c
             JOIN temp.deck_keys k ON k.lex_id = c.lex_id AND k.stem = c.stem
-            WHERE c.state IN ({marks}) AND c.due <= ?
+            WHERE c.state IN ({marks}) AND c.due {op} ?
             ORDER BY c.due LIMIT ?""", (*states, ts(until), limit)).fetchall()
 
     def _new_keys(self, limit: int) -> list[CardKey]:
@@ -190,7 +195,10 @@ class StudySession:
             out.append((CardKey(row["lex_id"], row["stem"]), row))
         review_left = self.cfg.max_reviews_per_day - reviews_today
         if review_left > 0:
-            for row in self._due_cards((State.Review,), now, min(review_left, 2)):
+            # Learned words: everything due today, not only what is due this minute.
+            end_of_day = day_start(now, self.tz) + timedelta(days=1)
+            for row in self._due_cards((State.Review,), end_of_day, min(review_left, 2),
+                                       before=True):
                 out.append((CardKey(row["lex_id"], row["stem"]), row))
         new_left = self.cfg.new_per_day - new_today
         if new_left > 0:

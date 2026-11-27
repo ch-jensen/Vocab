@@ -11,7 +11,7 @@ from vocab.decks import ALL_STEMS, CardKey, DeckConfig, Passage
 from vocab.migrate import import_score_csv
 from vocab.occurrences import choose_occurrence, strip_accents
 from vocab.session import StudySession, day_start, expected_gloss
-from vocab.store import DEFAULT_BHSA_DB, Store
+from vocab.store import DEFAULT_BHSA_DB, Store, ts
 
 pytestmark = pytest.mark.skipif(not DEFAULT_BHSA_DB.exists(), reason="run build_db.py first")
 
@@ -353,3 +353,28 @@ def test_user_data_dir_per_system(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     assert store_mod.default_user_db() == tmp_path / "Roaming" / "Vocab" / "user.sqlite"
+
+
+def test_learned_words_due_from_start_of_day(store):
+    """As in Anki: a learned word due today at 19:48 can be reviewed in the morning."""
+    clock = Clock(datetime(2026, 11, 27, 10, 13, tzinfo=UTC))
+    deck = decks.create_deck(store, "d", DeckConfig(plan_id="hebrew-frequency", new_per_day=0))
+    def add(lex_id, due):
+        store.con.execute(
+            "INSERT INTO cards (lex_id, stem, state, step, stability, difficulty, due, last_review, "
+            "created_at) VALUES (?, '*', 2, NULL, 1.2, 5, ?, ?, ?)",
+            (lex_id, ts(due), ts(due - timedelta(days=1)), ts(due - timedelta(days=1))))
+    add("hbo:W", datetime(2026, 11, 27, 19, 48, tzinfo=UTC))     # later today
+    add("hbo:H", datetime(2026, 11, 28, 3, 30, tzinfo=UTC))      # before 04:00: still today's day
+    add("hbo:L", datetime(2026, 11, 28, 10, 0, tzinfo=UTC))      # tomorrow
+    store.con.commit()
+    s = StudySession(store, deck, clock=clock, tz=UTC, rng=random.Random(1), fuzzing=False)
+    assert s.counts().review == 2
+    shown = []
+    while (item := s.next_item()) is not None:
+        shown.append(item.key.lex_id)
+        s.rate(item, Rating.Good)
+    assert shown == ["hbo:W", "hbo:H"]
+    assert s.counts().review == 0
+    # Words in learning still keep their exact minutes (no learn-ahead).
+    assert s.next_learning_due() is None
