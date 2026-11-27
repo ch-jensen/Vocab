@@ -235,7 +235,7 @@ def test_stats_page(app, store):
     win.study.session.rate(win.study.item, Rating.Easy)     # graduate 'and'
     win.show_stats()
     texts = " ".join(w.text() for w in win.stats.body.findChildren(type(win.study.feedback)))
-    assert "1" in texts and "words learned" in texts
+    assert "0 mature words" in texts and "1 young words" in texts   # a new word just graduated
     assert "% " in texts or "%</span>" in texts           # coverage hero
     assert not win.stats.fit_btn.isEnabled()                 # too few reviews to fit
 

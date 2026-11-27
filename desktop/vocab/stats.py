@@ -1,6 +1,8 @@
 """Statistics: progress, review history, forecast and how much of the text is known.
 
 A word counts as *learned* when its card has graduated (FSRS state Review).
+As in Anki, a learned word is *mature* when its current interval (from its last
+review to its next) is 21 days or more, and *young* otherwise.
 Coverage counts word occurrences in the Bible whose lexeme is learned (for
 cards per stem: whose lexeme and stem are learned).
 """
@@ -18,33 +20,78 @@ from .session import DAY_ROLLOVER_HOUR, day_start
 from .store import Store, parse_ts, ts
 
 
+MATURE_DAYS = 21    # Anki's limit between young and mature words
+
+
 def study_day(moment: datetime, tz: tzinfo | None = None) -> date:
     """The study day a moment belongs to (days start at 04:00 local)."""
     return (moment.astimezone(tz) - timedelta(hours=DAY_ROLLOVER_HOUR)).date()
 
 
+def interval_days(last_review: str | None, due: str, tz: tzinfo | None = None) -> int:
+    """A learned word's current interval in study days (0 if never reviewed here)."""
+    if not last_review:
+        return 0
+    return (study_day(parse_ts(due), tz) - study_day(parse_ts(last_review), tz)).days
+
+
+def is_mature(last_review: str | None, due: str, tz: tzinfo | None = None) -> bool:
+    return interval_days(last_review, due, tz) >= MATURE_DAYS
+
+
+def _maturity(store: Store, tz: tzinfo | None = None) -> dict[tuple[str, str], bool]:
+    """(lex_id, stem) of every learned word -> mature?"""
+    return {(r[0], r[1]): is_mature(r[2], r[3], tz) for r in store.con.execute(
+        "SELECT lex_id, stem, last_review, due FROM cards WHERE state = ?", (int(State.Review),))}
+
+
 @dataclass
 class Summary:
-    learned: int
+    learned: int                  # young + mature
+    young: int
+    mature: int
     learning: int
     reviews_total: int
     reviews_today: int
     retention_30d: float | None   # share of reviews of learned words answered correctly
+    retention_young: float | None
+    retention_mature: float | None
     streak_days: int              # consecutive study days up to today (or yesterday)
 
 
 def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None) -> Summary:
     now = now or datetime.now(timezone.utc)
     con = store.con
-    learned, learning = con.execute(
-        "SELECT COALESCE(SUM(state = 2), 0), COALESCE(SUM(state IN (1, 3)), 0) FROM cards").fetchone()
+    maturity = _maturity(store, tz)
+    mature = sum(maturity.values())
+    learned = len(maturity)
+    learning = con.execute("SELECT COUNT(*) FROM cards WHERE state IN (1, 3)").fetchone()[0]
     total = con.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
     today = con.execute("SELECT COUNT(*) FROM reviews WHERE reviewed_at >= ?",
                         (ts(day_start(now, tz)),)).fetchone()[0]
-    n, ok = con.execute(
-        "SELECT COUNT(*), COALESCE(SUM(rating > 1), 0) FROM reviews "
-        "WHERE state_before = ? AND reviewed_at >= ?",
-        (int(State.Review), ts(now - timedelta(days=30)))).fetchone()
+
+    # Retention over the last 30 days, split like Anki by the interval before the
+    # review: a review is "mature" if the word had gone 21 days or more since its
+    # previous review. (Words imported from the notebook version have no previous
+    # review here; their first review counts as young.)
+    since = ts(now - timedelta(days=30))
+    tally = {False: [0, 0], True: [0, 0]}       # mature? -> [reviews, remembered]
+    previous: dict[int, str] = {}
+    for card_id, at, rating, state_before in con.execute(
+            "SELECT card_id, reviewed_at, rating, state_before FROM reviews "
+            "ORDER BY card_id, reviewed_at, review_id"):
+        if state_before == State.Review and at >= since:
+            prev = previous.get(card_id)
+            was_mature = bool(prev) and (study_day(parse_ts(at), tz)
+                                         - study_day(parse_ts(prev), tz)).days >= MATURE_DAYS
+            tally[was_mature][0] += 1
+            tally[was_mature][1] += rating > 1
+        previous[card_id] = at
+    n = tally[False][0] + tally[True][0]
+    ok = tally[False][1] + tally[True][1]
+
+    def share(t):
+        return t[1] / t[0] if t[0] else None
     days = {study_day(parse_ts(r[0]), tz) for r in con.execute("SELECT reviewed_at FROM reviews")}
     streak, day = 0, study_day(now, tz)
     if day not in days:
@@ -52,7 +99,8 @@ def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None)
     while day in days:
         streak += 1
         day -= timedelta(days=1)
-    return Summary(learned, learning, total, today, ok / n if n else None, streak)
+    return Summary(learned, learned - mature, mature, learning, total, today,
+                   ok / n if n else None, share(tally[False]), share(tally[True]), streak)
 
 
 def reviews_per_day(store: Store, days: int = 30, now: datetime | None = None,
@@ -115,55 +163,78 @@ def _book_names(store: Store) -> list[tuple[int, str]]:
             "SELECT book_order, book_en FROM bhsa.verses GROUP BY book_order ORDER BY book_order")])
 
 
-def _known_by_book(store: Store) -> dict[int, list[int]]:
-    """book_order -> [occurrences, occurrences of learned words]."""
-    learned = {(r[0], r[1]) for r in store.con.execute(
-        "SELECT lex_id, stem FROM cards WHERE state = ?", (int(State.Review),))}
-    whole = {lex for lex, stem in learned if stem == "*"}
+def _known_by_book(store: Store, tz: tzinfo | None = None) -> dict[int, list[int]]:
+    """book_order -> [occurrences, occurrences of learned words, of mature words]."""
+    maturity = _maturity(store, tz)
+    whole = {lex: m for (lex, stem), m in maturity.items() if stem == "*"}
     totals: dict[int, list[int]] = {}
     for lex_id, stem, book, n in _word_counts(store):
-        entry = totals.setdefault(book, [0, 0])
+        entry = totals.setdefault(book, [0, 0, 0])
         entry[0] += n
-        if lex_id in whole or (lex_id, stem) in learned:
+        mature = whole.get(lex_id)
+        if mature is None:
+            mature = maturity.get((lex_id, stem))
+        if mature is not None:
             entry[1] += n
+            if mature:
+                entry[2] += n
     return totals
 
 
-def coverage(store: Store) -> float:
-    """Share of all word occurrences in the Bible whose word is learned."""
-    totals = _known_by_book(store)
-    words = sum(t[0] for t in totals.values())
-    return sum(t[1] for t in totals.values()) / words if words else 0.0
-
-
 @dataclass
-class BookCoverage:
-    book: str        # English name
-    words: int       # word occurrences in the book
-    known: int
+class Coverage:
+    words: int       # word occurrences
+    known: int       # of learned words (young and mature)
+    mature: int      # of mature words
 
     @property
     def share(self) -> float:
         return self.known / self.words if self.words else 0.0
 
+    @property
+    def mature_share(self) -> float:
+        return self.mature / self.words if self.words else 0.0
 
-def coverage_by_book(store: Store) -> list[BookCoverage]:
-    totals = _known_by_book(store)
-    return [BookCoverage(name, *totals.get(order, [0, 0])) for order, name in _book_names(store)]
+
+def coverage_detail(store: Store, tz: tzinfo | None = None) -> Coverage:
+    totals = _known_by_book(store, tz).values()
+    return Coverage(*(sum(t[i] for t in totals) for i in range(3)))
+
+
+def coverage(store: Store) -> float:
+    """Share of all word occurrences in the Bible whose word is learned."""
+    return coverage_detail(store).share
+
+
+@dataclass
+class BookCoverage(Coverage):
+    book: str = ""   # English name
+
+
+def coverage_by_book(store: Store, tz: tzinfo | None = None) -> list[BookCoverage]:
+    totals = _known_by_book(store, tz)
+    return [BookCoverage(*totals.get(order, [0, 0, 0]), book=name)
+            for order, name in _book_names(store)]
 
 
 @dataclass
 class DeckProgress:
     name: str
     total: int
-    learned: int
+    learned: int     # young + mature
+    mature: int
     learning: int
 
+    @property
+    def young(self) -> int:
+        return self.learned - self.mature
 
-def deck_progress(store: Store, deck: Deck) -> DeckProgress:
+
+def deck_progress(store: Store, deck: Deck, tz: tzinfo | None = None) -> DeckProgress:
     keys = deck_cards(store.con, deck.config)
-    states: dict[tuple[str, str], int] = {
-        (r[0], r[1]): r[2] for r in store.con.execute("SELECT lex_id, stem, state FROM cards")}
-    learned = sum(1 for k in keys if states.get(tuple(k)) == State.Review)
-    learning = sum(1 for k in keys if states.get(tuple(k)) in (State.Learning, State.Relearning))
-    return DeckProgress(deck.name, len(keys), learned, learning)
+    maturity = _maturity(store, tz)
+    in_learning = {(r[0], r[1]) for r in store.con.execute(
+        "SELECT lex_id, stem FROM cards WHERE state IN (1, 3)")}
+    learned = [maturity[k] for k in map(tuple, keys) if k in maturity]
+    learning = sum(1 for k in map(tuple, keys) if k in in_learning)
+    return DeckProgress(deck.name, len(keys), len(learned), sum(learned), learning)

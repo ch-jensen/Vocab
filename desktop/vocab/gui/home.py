@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHea
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
-from .. import deckfile, decks
+from .. import deckfile, decks, stats
 from ..session import StudySession
 from ..store import Store
 from .common import BAD, GOOD
@@ -112,10 +112,12 @@ class HomePage(QWidget):
         self.table.setVisible(bool(self._decks))
         self.empty.setVisible(not self._decks)
 
-        learned, total_reviews = self.store.con.execute(
-            "SELECT (SELECT COUNT(*) FROM cards WHERE state = 2), (SELECT COUNT(*) FROM reviews)"
-        ).fetchone()
-        self.summary.setText(f"{learned} words learned · {total_reviews} reviews in total")
+        maturity = stats._maturity(self.store)
+        total_reviews = self.store.con.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
+        self.summary.setText(f"{len(maturity)} words learned ({sum(maturity.values())} mature) · "
+                             f"{total_reviews} reviews in total")
+        self.summary.setToolTip(f"Mature words have an interval of {stats.MATURE_DAYS} days or "
+                                "more; see Statistics for details.")
         self._update_buttons()
 
     def selected_deck(self) -> decks.Deck | None:
