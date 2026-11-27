@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from PySide6.QtCore import QEvent, QTimer
+from PySide6.QtCore import QEvent, QRunnable, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QFontDatabase, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox,
                                QStackedWidget)
@@ -181,6 +181,27 @@ class MainWindow(QMainWindow):
         self.home.refresh()
 
 
+class _Prewarm(QRunnable):
+    """After start-up, do the one-time counts in the background (read-only connection),
+    so the statistics and new decks are quick when first opened."""
+
+    def __init__(self, store: Store):
+        super().__init__()
+        self.store = store
+
+    def run(self) -> None:
+        from .. import decks as decks_mod, stats as stats_mod
+        try:
+            con = self.store.read_only_connection()
+            try:
+                decks_mod._askable_stems(con)
+                stats_mod.word_counts(con)
+            finally:
+                con.close()
+        except Exception:     # only a speed-up; the app computes these itself if needed
+            pass
+
+
 class VocabApplication(QApplication):
     """QApplication that also receives files opened from the Finder on macOS.
 
@@ -236,6 +257,7 @@ def main(argv=None) -> int:
         return 1
     window = MainWindow(store)
     window.show()
+    QThreadPool.globalInstance().start(_Prewarm(store))
     if args.deck_file and args.deck_file.lower().endswith(".vocabdeck"):
         app.open_deck_file(args.deck_file)
     app.set_window(window)

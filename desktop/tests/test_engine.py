@@ -454,3 +454,32 @@ def test_learning_left_from_yesterday_counts_as_due(store):
     assert (c.learning, c.learning_later, c.review) == (0, 1, 1)
     clock.advance(minutes=1)
     assert s.counts().learning == 1
+
+
+def test_deck_cards_cached_and_gloss_filter_live(store):
+    """Deck contents are remembered, but the user's new glosses count at once."""
+    from vocab import glosses
+    cfg = DeckConfig(gloss_language="German")
+    assert decks.deck_cards(store.con, cfg) == []
+    glosses.set_gloss(store, "hbo:>MR[", "German", "default", "sagen")
+    assert [k.lex_id for k in decks.deck_cards(store.con, cfg)] == ["hbo:>MR["]
+    # The same settings in another order of fields give the same, cached, result.
+    a = decks.deck_cards(store.con, DeckConfig(plan_id="hebrew-frequency"))
+    a.append("changed by the caller")
+    assert "changed by the caller" not in decks.deck_cards(store.con, DeckConfig(plan_id="hebrew-frequency"))
+
+
+def test_coverage_matches_word_by_word_count(store):
+    from vocab import stats
+    for lex, stem in (("hbo:W", "*"), ("hbo:HLK[", "qal"), ("hbo:>MR[", "*")):
+        store.con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) "
+                          "VALUES (?, ?, 2, '2030-01-01T04:00:00.000+00:00', '2026-01-01T00:00:00.000+00:00')",
+                          (lex, stem))
+    store.con.commit()
+    known = store.con.execute("""SELECT COUNT(*) FROM bhsa.words w WHERE EXISTS (
+        SELECT 1 FROM cards c WHERE c.lex_id = w.lex_id AND c.state = 2
+        AND (c.stem = '*' OR c.stem = w.stem))""").fetchone()[0]
+    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words").fetchone()[0]
+    assert stats.coverage(store) == pytest.approx(known / total)
+    books = stats.coverage_by_book(store)
+    assert sum(b.known for b in books) == known and sum(b.words for b in books) == total

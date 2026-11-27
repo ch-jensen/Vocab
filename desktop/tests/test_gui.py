@@ -321,3 +321,26 @@ def test_deck_file_opened_from_finder(app, store, tmp_path, monkeypatch):
     app.processEvents()
     assert opened == [path] and app.pending == []
     app.window = None
+
+
+def test_deck_editor_counts_in_background(app, store):
+    """The word count runs on a worker thread; only the newest result is shown."""
+    import time
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.custom_radio.setChecked(True)
+    dlg.books.set_all(False)
+    dlg.books.set_book("Genesis", "1-3")
+    dlg.update_count()
+    first = dlg._generation
+    dlg.books.set_book("Jona")
+    dlg.update_count()                                  # supersedes the first count
+    assert dlg.count.text() == "Counting words…"
+    expected = dlg.card_count()
+    deadline = time.time() + 30
+    while "words in this deck" not in dlg.count.text() and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert dlg.count.text() == f"{expected} words in this deck"
+    dlg._count_done(first, 1)                            # a stale result is ignored
+    assert dlg.count.text() == f"{expected} words in this deck"

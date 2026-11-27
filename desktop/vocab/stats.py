@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone, tzinfo
 
 from fsrs import State
 
+from . import decks as decks_mod
 from .decks import Deck, deck_cards
 from .session import DAY_ROLLOVER_HOUR, day_start
 from .store import Store, parse_ts, ts
@@ -82,15 +83,57 @@ def forecast(store: Store, days: int = 30, now: datetime | None = None,
     return sorted(counts.items())
 
 
-_KNOWN = """EXISTS (SELECT 1 FROM cards c WHERE c.lex_id = w.lex_id AND c.state = 2
-                    AND (c.stem = '*' OR c.stem = w.stem))"""
+def word_counts(con) -> list[tuple[str, str, int, int]]:
+    """(lex_id, stem, book_order, number of occurrences), counted once per run.
+
+    Each book is a contiguous range of word nodes, so one grouped query per book
+    range is much faster than joining every word with its verse.
+    """
+    def compute():
+        cur = con.cursor()
+        cur.row_factory = None
+        ranges = cur.execute("""
+            SELECT v.book_order, MIN(w.node), MAX(w.node) FROM bhsa.verses v
+            JOIN bhsa.words w ON w.verse_id = v.verse_id GROUP BY v.book_order""").fetchall()
+        rows = []
+        for order, first, last in ranges:
+            rows += [(lex, stem, order, n) for lex, stem, n in cur.execute(
+                "SELECT lex_id, stem, COUNT(*) FROM bhsa.words WHERE node BETWEEN ? AND ? "
+                "GROUP BY lex_id, stem", (first, last))]
+        return rows
+    return decks_mod._cached(con, ("word counts",), compute)
+
+
+def _word_counts(store: Store) -> list[tuple[str, str, int, int]]:
+    return word_counts(store.con)
+
+
+def _book_names(store: Store) -> list[tuple[int, str]]:
+    con = store.con
+    return decks_mod._cached(con, ("book names",), lambda: [
+        (r[0], r[1].replace("_", " ")) for r in con.execute(
+            "SELECT book_order, book_en FROM bhsa.verses GROUP BY book_order ORDER BY book_order")])
+
+
+def _known_by_book(store: Store) -> dict[int, list[int]]:
+    """book_order -> [occurrences, occurrences of learned words]."""
+    learned = {(r[0], r[1]) for r in store.con.execute(
+        "SELECT lex_id, stem FROM cards WHERE state = ?", (int(State.Review),))}
+    whole = {lex for lex, stem in learned if stem == "*"}
+    totals: dict[int, list[int]] = {}
+    for lex_id, stem, book, n in _word_counts(store):
+        entry = totals.setdefault(book, [0, 0])
+        entry[0] += n
+        if lex_id in whole or (lex_id, stem) in learned:
+            entry[1] += n
+    return totals
 
 
 def coverage(store: Store) -> float:
     """Share of all word occurrences in the Bible whose word is learned."""
-    total, known = store.con.execute(
-        f"SELECT COUNT(*), COALESCE(SUM({_KNOWN}), 0) FROM bhsa.words w").fetchone()
-    return known / total if total else 0.0
+    totals = _known_by_book(store)
+    words = sum(t[0] for t in totals.values())
+    return sum(t[1] for t in totals.values()) / words if words else 0.0
 
 
 @dataclass
@@ -105,11 +148,8 @@ class BookCoverage:
 
 
 def coverage_by_book(store: Store) -> list[BookCoverage]:
-    rows = store.con.execute(f"""
-        SELECT v.book_en, COUNT(*), COALESCE(SUM({_KNOWN}), 0)
-        FROM bhsa.words w JOIN bhsa.verses v ON v.verse_id = w.verse_id
-        GROUP BY v.book_order ORDER BY v.book_order""").fetchall()
-    return [BookCoverage(r[0].replace("_", " "), r[1], r[2]) for r in rows]
+    totals = _known_by_book(store)
+    return [BookCoverage(name, *totals.get(order, [0, 0])) for order, name in _book_names(store)]
 
 
 @dataclass

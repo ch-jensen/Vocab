@@ -166,6 +166,14 @@ class Store:
     def close(self) -> None:
         self.con.close()
 
+    def read_only_connection(self) -> sqlite3.Connection:
+        """A separate read-only connection (with BHSA attached), e.g. for a worker thread."""
+        con = sqlite3.connect(self.user_db.resolve().as_uri() + "?mode=ro", uri=True,
+                              check_same_thread=False)
+        con.row_factory = sqlite3.Row
+        con.execute("ATTACH DATABASE ? AS bhsa", (self.bhsa_db.resolve().as_uri() + "?mode=ro",))
+        return con
+
     def __enter__(self):
         return self
 

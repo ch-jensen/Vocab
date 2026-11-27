@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
                                QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
@@ -160,6 +160,32 @@ class BookChapters(QWidget):
         return out
 
 
+class _CountSignals(QObject):
+    done = Signal(int, object)      # generation, number of words or the exception
+
+
+class _CountTask(QRunnable):
+    """Counts a deck's words on a worker thread with its own read-only connection."""
+
+    def __init__(self, store: Store, cfg: DeckConfig, generation: int, signals: _CountSignals):
+        super().__init__()
+        self.store, self.cfg, self.generation, self.signals = store, cfg, generation, signals
+
+    def run(self) -> None:
+        try:
+            con = self.store.read_only_connection()
+            try:
+                result = len(decks.deck_cards(con, self.cfg))
+            finally:
+                con.close()
+        except Exception as exc:     # shown in the dialog instead of crashing the app
+            result = exc
+        try:
+            self.signals.done.emit(self.generation, result)
+        except RuntimeError:         # the dialog was closed in the meantime
+            pass
+
+
 class DeckEditor(QDialog):
     def __init__(self, store: Store, deck: Deck | None, parent=None):
         super().__init__(parent)
@@ -310,6 +336,9 @@ class DeckEditor(QDialog):
         layout.addLayout(bottom)
 
         # Live count of words in the deck.
+        self._generation = 0
+        self._count_signals = _CountSignals()
+        self._count_signals.done.connect(self._count_done)
         self._timer = QTimer(self, singleShot=True, interval=300)
         self._timer.timeout.connect(self.update_count)
         for signal in (self.plan_radio.toggled, self.plan.currentIndexChanged,
@@ -354,12 +383,24 @@ class DeckEditor(QDialog):
         return len(decks.deck_cards(self.store.con, self.config()))
 
     def update_count(self) -> None:
+        """Count the deck's words in the background, so the dialog never freezes."""
         try:
-            n = self.card_count()
+            cfg = self.config()
         except ValueError as exc:
             self.count.setText(f'<span style="color:#c53030">{exc}</span>')
             return
-        self.count.setText(f"{n} words in this deck")
+        self._generation += 1
+        self.count.setText("Counting words…")
+        QThreadPool.globalInstance().start(
+            _CountTask(self.store, cfg, self._generation, self._count_signals))
+
+    def _count_done(self, generation: int, result) -> None:
+        if generation != self._generation:
+            return                                  # settings changed since; a newer count follows
+        if isinstance(result, Exception):
+            self.count.setText(f'<span style="color:#c53030">Could not count the words: {result}</span>')
+        else:
+            self.count.setText(f"{result} words in this deck")
 
     def save(self) -> None:
         name = self.name.text().strip()
