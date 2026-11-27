@@ -181,3 +181,36 @@ def test_export_includes_builtin(store, tmp_path):
     out = tmp_path / "Danish_glosses.csv"
     n = glosses.export_csv(store, "Danish", out)
     assert n > 1500 and ">B/,fader" in out.read_text(encoding="utf-8")
+
+
+def test_young_and_mature(store):
+    # 'and' was last reviewed 30 days ago and is due in 5 days: interval 35 days -> mature.
+    c1 = add_card(store, "hbo:W", State.Review, NOW + timedelta(days=5))
+    store.con.execute("UPDATE cards SET last_review = ? WHERE card_id = ?",
+                      (ts(NOW - timedelta(days=30)), c1))
+    # 'the': interval 4 days -> young.
+    c2 = add_card(store, "hbo:H", State.Review, NOW + timedelta(days=3))
+    store.con.execute("UPDATE cards SET last_review = ? WHERE card_id = ?",
+                      (ts(NOW - timedelta(days=1)), c2))
+    # Reviews: c1 remembered after 25 days (mature), c2 forgotten after 2 days (young),
+    # c2 remembered after 1 day (young).
+    add_review(store, c1, NOW - timedelta(days=55), Rating.Good, 0)
+    add_review(store, c1, NOW - timedelta(days=30), Rating.Good, 2)
+    add_review(store, c2, NOW - timedelta(days=4), Rating.Good, 0)
+    add_review(store, c2, NOW - timedelta(days=2), Rating.Again, 2)
+    add_review(store, c2, NOW - timedelta(days=1), Rating.Good, 2)
+    store.con.commit()
+    s = stats.summary(store, NOW, UTC)
+    assert (s.learned, s.young, s.mature) == (2, 1, 1)
+    assert s.retention_mature == 1.0 and s.retention_young == 0.5
+    assert s.retention_30d == pytest.approx(2 / 3)
+    cov = stats.coverage_detail(store, UTC)
+    and_words = store.con.execute("SELECT COUNT(*) FROM bhsa.words WHERE lex_id='hbo:W'").fetchone()[0]
+    the_words = store.con.execute("SELECT COUNT(*) FROM bhsa.words WHERE lex_id='hbo:H'").fetchone()[0]
+    assert (cov.known, cov.mature) == (and_words + the_words, and_words)
+    books = stats.coverage_by_book(store, UTC)
+    assert sum(b.mature for b in books) == and_words
+    deck = decks.create_deck(store, "d", DeckConfig(plan_id="hebrew-frequency"))
+    p = stats.deck_progress(store, deck, UTC)
+    assert (p.learned, p.mature, p.young) == (2, 1, 1)
+    assert stats.interval_days(None, ts(NOW)) == 0

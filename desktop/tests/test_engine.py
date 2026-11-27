@@ -11,7 +11,7 @@ from vocab.decks import ALL_STEMS, CardKey, DeckConfig, Passage
 from vocab.migrate import import_score_csv
 from vocab.occurrences import choose_occurrence, strip_accents
 from vocab.session import StudySession, day_start, expected_gloss
-from vocab.store import DEFAULT_BHSA_DB, Store
+from vocab.store import DEFAULT_BHSA_DB, Store, ts
 
 pytestmark = pytest.mark.skipif(not DEFAULT_BHSA_DB.exists(), reason="run build_db.py first")
 
@@ -182,7 +182,8 @@ def test_cards_graduate_and_come_back(store, clock):
     item = s.next_item()
     out = s.rate(item, Rating.Good)      # graduates
     assert out.state == State.Review
-    assert out.due - clock.now >= timedelta(days=1)
+    # Scheduled to 04:00 on a later study day.
+    assert (out.due.hour, out.due.minute) == (4, 0) and out.due > day_start(clock.now, UTC)
     assert s.next_item() is None
     clock.now = out.due + timedelta(minutes=1)
     s = session(store, None, clock)      # a new day, a new session
@@ -353,3 +354,132 @@ def test_user_data_dir_per_system(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     assert store_mod.default_user_db() == tmp_path / "Roaming" / "Vocab" / "user.sqlite"
+
+
+def test_learned_words_due_from_start_of_day(store):
+    """As in Anki: a learned word due today at 19:48 can be reviewed in the morning."""
+    clock = Clock(datetime(2026, 11, 27, 10, 13, tzinfo=UTC))
+    deck = decks.create_deck(store, "d", DeckConfig(plan_id="hebrew-frequency", new_per_day=0))
+    def add(lex_id, due):
+        store.con.execute(
+            "INSERT INTO cards (lex_id, stem, state, step, stability, difficulty, due, last_review, "
+            "created_at) VALUES (?, '*', 2, NULL, 1.2, 5, ?, ?, ?)",
+            (lex_id, ts(due), ts(due - timedelta(days=1)), ts(due - timedelta(days=1))))
+    add("hbo:W", datetime(2026, 11, 27, 19, 48, tzinfo=UTC))     # later today
+    add("hbo:H", datetime(2026, 11, 28, 3, 30, tzinfo=UTC))      # before 04:00: still today's day
+    add("hbo:L", datetime(2026, 11, 28, 10, 0, tzinfo=UTC))      # tomorrow
+    store.con.commit()
+    s = StudySession(store, deck, clock=clock, tz=UTC, rng=random.Random(1), fuzzing=False)
+    assert s.counts().review == 2
+    shown = []
+    while (item := s.next_item()) is not None:
+        shown.append(item.key.lex_id)
+        s.rate(item, Rating.Good)
+    assert shown == ["hbo:W", "hbo:H"]
+    assert s.counts().review == 0
+    # Words in learning still keep their exact minutes (no learn-ahead).
+    assert s.next_learning_due() is None
+
+
+def test_learned_words_scheduled_at_four(store, clock):
+    """As in Anki, a learned word is scheduled to a day: 04:00 local on its due day."""
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=1), clock)
+    item = s.next_item()
+    preview = s.preview(item)
+    assert (preview[Rating.Easy].hour, preview[Rating.Easy].minute) == (4, 0)
+    assert preview[Rating.Again] == clock.now + timedelta(minutes=1)     # learning: exact time
+    out = s.rate(item, Rating.Easy)                                       # graduates at once
+    assert out.state == State.Review and out.due == preview[Rating.Easy]
+    stored = store.con.execute("SELECT due FROM cards").fetchone()[0]
+    assert stored.endswith("T04:00:00.000+00:00")
+    # Learning steps are not moved to 04:00.
+    s2 = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=2), clock, "two")
+    out2 = s2.rate(s2.next_item(), Rating.Again)
+    assert out2.due == clock.now + timedelta(minutes=1)
+
+
+def test_align_learned_due_times():
+    import sqlite3
+    from vocab.store import USER_SCHEMA, align_learned_due_times
+    con = sqlite3.connect(":memory:")
+    con.executescript(USER_SCHEMA)
+    rows = [("hbo:W", 2, "2026-11-27T19:48:00.000+00:00"),   # learned, later today -> 04:00
+            ("hbo:H", 2, "2026-11-28T03:30:00.000+00:00"),   # before 04:00: belongs to the 27th
+            ("hbo:L", 1, "2026-11-27T10:14:00.000+00:00"),   # learning: unchanged
+            ("hbo:B", 2, "2026-11-30T04:00:00.000+00:00")]   # already aligned
+    for lex, state, due in rows:
+        con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) VALUES (?, '*', ?, ?, ?)",
+                    (lex, state, due, due))
+    assert align_learned_due_times(con, UTC) == 2
+    due = dict(con.execute("SELECT lex_id, due FROM cards"))
+    assert due["hbo:W"] == "2026-11-27T04:00:00.000+00:00"
+    assert due["hbo:H"] == "2026-11-27T04:00:00.000+00:00"
+    assert due["hbo:L"] == "2026-11-27T10:14:00.000+00:00"
+    assert due["hbo:B"] == "2026-11-30T04:00:00.000+00:00"
+    assert align_learned_due_times(con, UTC) == 0                      # safe to run again
+
+
+def test_existing_database_aligned_once(tmp_path):
+    from vocab.store import parse_ts
+    path = tmp_path / "user.sqlite"
+    with Store(path) as s:                                              # new database
+        s.con.execute("DELETE FROM meta WHERE key = 'learned_due_at_day_start'")   # as before this version
+        s.con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) "
+                      "VALUES ('hbo:W', '*', 2, '2026-11-27T19:48:00.000+00:00', '2026-11-26T19:48:00.000+00:00')")
+        s.con.commit()
+    with Store(path) as s:                                              # opened by the new version
+        due = parse_ts(s.con.execute("SELECT due FROM cards").fetchone()[0]).astimezone()
+        assert (due.hour, due.minute) == (4, 0)
+        assert s.get_meta("learned_due_at_day_start") == "1"
+
+
+def test_learning_left_from_yesterday_counts_as_due(store):
+    """At the start of a day, words left in learning since yesterday are shown as due."""
+    yesterday = datetime(2026, 11, 26, 18, 0, tzinfo=UTC)
+    clock = Clock(yesterday)
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=2), clock)
+    s.rate(s.next_item(), Rating.Again)          # in learning, due 18:01 yesterday
+    s.rate(s.next_item(), Rating.Good)           # in learning, due 18:10 yesterday
+    c = s.counts()
+    assert (c.learning, c.learning_later, c.review) == (0, 2, 0)
+    # Next morning: both are due, none are "learning".
+    clock.now = datetime(2026, 11, 27, 8, 0, tzinfo=UTC)
+    s = session(store, None, clock)
+    c = s.counts()
+    assert (c.new, c.learning, c.learning_later, c.review) == (2, 0, 0, 2)
+    item = s.next_item()
+    assert not item.is_new                       # due words come before new ones
+    out = s.rate(item, Rating.Again)             # answered today: an ordinary learning step
+    c = s.counts()
+    assert (c.learning, c.learning_later, c.review) == (0, 1, 1)
+    clock.advance(minutes=1)
+    assert s.counts().learning == 1
+
+
+def test_deck_cards_cached_and_gloss_filter_live(store):
+    """Deck contents are remembered, but the user's new glosses count at once."""
+    from vocab import glosses
+    cfg = DeckConfig(gloss_language="German")
+    assert decks.deck_cards(store.con, cfg) == []
+    glosses.set_gloss(store, "hbo:>MR[", "German", "default", "sagen")
+    assert [k.lex_id for k in decks.deck_cards(store.con, cfg)] == ["hbo:>MR["]
+    # The same settings in another order of fields give the same, cached, result.
+    a = decks.deck_cards(store.con, DeckConfig(plan_id="hebrew-frequency"))
+    a.append("changed by the caller")
+    assert "changed by the caller" not in decks.deck_cards(store.con, DeckConfig(plan_id="hebrew-frequency"))
+
+
+def test_coverage_matches_word_by_word_count(store):
+    from vocab import stats
+    for lex, stem in (("hbo:W", "*"), ("hbo:HLK[", "qal"), ("hbo:>MR[", "*")):
+        store.con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) "
+                          "VALUES (?, ?, 2, '2030-01-01T04:00:00.000+00:00', '2026-01-01T00:00:00.000+00:00')",
+                          (lex, stem))
+    store.con.commit()
+    known = store.con.execute("""SELECT COUNT(*) FROM bhsa.words w WHERE EXISTS (
+        SELECT 1 FROM cards c WHERE c.lex_id = w.lex_id AND c.state = 2
+        AND (c.stem = '*' OR c.stem = w.stem))""").fetchone()[0]
+    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words").fetchone()[0]
+    assert stats.coverage(store) == pytest.approx(known / total)
+    books = stats.coverage_by_book(store)
+    assert sum(b.known for b in books) == known and sum(b.words for b in books) == total

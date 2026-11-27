@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, QRectF, Qt, QThread, Signal
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                                QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -33,8 +34,66 @@ def heading(text: str) -> QLabel:
     return label
 
 
-def progress_table(headers: list[str], rows: list[tuple[str, int, int]]) -> QTableWidget:
-    """Rows of (name, known, total) with a progress bar per row."""
+MATURE_COLOUR = QColor("#2a78d6")
+YOUNG_COLOUR = QColor("#8fbbee")
+TRACK_COLOUR = QColor("#e8e7e2")
+
+MATURE_TIP = (f"<b>Mature</b>: learned words with an interval of {stats.MATURE_DAYS} days or more. "
+              "You have recalled them several times with growing gaps: your solid vocabulary.")
+YOUNG_TIP = (f"<b>Young</b>: learned words with an interval under {stats.MATURE_DAYS} days. "
+             "You know them, but the memory is still being consolidated.")
+
+
+class StackedBar(QWidget):
+    """One bar: mature (dark), young (light) and the rest (track), 2 px apart."""
+
+    def __init__(self, mature: int, young: int, total: int, parent=None):
+        super().__init__(parent)
+        self.mature, self.young, self.total = mature, young, max(total, 1)
+        self.setFixedHeight(10)
+        self.setMinimumWidth(80)
+        self.setToolTip(f"Mature {mature} · young {young} · of {total}")
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        w, h = self.width(), self.height()
+        p.setBrush(TRACK_COLOUR)
+        p.drawRoundedRect(QRectF(0, 0, w, h), h / 2, h / 2)
+        x = 0.0
+        for value, colour in ((self.mature, MATURE_COLOUR), (self.young, YOUNG_COLOUR)):
+            if value <= 0:
+                continue
+            seg = max(w * value / self.total, 2)
+            p.setBrush(colour)
+            p.drawRoundedRect(QRectF(x, 0, min(seg, w - x), h), h / 2, h / 2)
+            x += seg + 2                        # 2 px gap between the segments
+        p.end()
+
+
+def legend() -> QWidget:
+    w = QWidget()
+    row = QHBoxLayout(w)
+    row.setContentsMargins(0, 0, 0, 0)
+    for colour, label, tip in ((MATURE_COLOUR, f"Mature ({stats.MATURE_DAYS}+ days)", MATURE_TIP),
+                               (YOUNG_COLOUR, "Young", YOUNG_TIP)):
+        swatch = QLabel()
+        swatch.setFixedSize(12, 12)
+        swatch.setStyleSheet(f"background: {colour.name()}; border-radius: 3px;")
+        text = QLabel(label)
+        for part in (swatch, text):
+            part.setToolTip(tip)
+        row.addWidget(swatch)
+        row.addWidget(text)
+        row.addSpacing(12)
+    row.addStretch()
+    return w
+
+
+def progress_table(headers: list[str], rows: list[tuple[str, int, int, int]],
+                   unit: str = "") -> QTableWidget:
+    """Rows of (name, mature, young, total) with a two-part bar per row."""
     table = QTableWidget(len(rows), 3)
     table.setHorizontalHeaderLabels(headers)
     table.verticalHeader().setVisible(False)
@@ -43,19 +102,20 @@ def progress_table(headers: list[str], rows: list[tuple[str, int, int]]) -> QTab
     table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
     table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-    for r, (name, known, total) in enumerate(rows):
+    for r, (name, mature, young, total) in enumerate(rows):
         table.setItem(r, 0, QTableWidgetItem(name))
-        bar = QProgressBar()
-        bar.setRange(0, max(total, 1))
-        bar.setValue(known)
-        bar.setTextVisible(False)
-        bar.setFixedHeight(10)
         holder = QWidget()
         h = QHBoxLayout(holder)
         h.setContentsMargins(8, 0, 8, 0)
-        h.addWidget(bar)
+        h.addWidget(StackedBar(mature, young, total))
         table.setCellWidget(r, 1, holder)
-        pct = QTableWidgetItem(f"{100 * known / total:.1f}%  ({known}/{total})" if total else "–")
+        known = mature + young
+        if total:
+            text = (f"{100 * known / total:.1f}% (mature {100 * mature / total:.1f}%)" if unit == "%"
+                    else f"{known} of {total} ({mature} mature)")
+        else:
+            text = "–"
+        pct = QTableWidgetItem(text)
         pct.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         table.setItem(r, 2, pct)
     table.setFixedHeight(min(table.verticalHeader().length() + table.horizontalHeader().height() + 4,
@@ -117,13 +177,19 @@ class StatsPage(QWidget):
         s = stats.summary(self.store)
 
         tiles = QGridLayout()
-        retention = f"{100 * s.retention_30d:.0f}%" if s.retention_30d is not None else "–"
+
+        def pct(x):
+            return f"{100 * x:.0f}%" if x is not None else "–"
         for i, t in enumerate([
-            tile(str(s.learned), "words learned", "Words that have graduated from learning."),
+            tile(str(s.mature), "mature words", MATURE_TIP),
+            tile(str(s.young), "young words", YOUNG_TIP),
             tile(str(s.learning), "in learning", "Words met recently or forgotten, still in short steps."),
             tile(str(s.reviews_today), "reviews today", "Answers given today (the day starts at 04:00)."),
-            tile(retention, "remembered (30 days)",
-                 "Share of reviews of learned words in the last 30 days that you remembered."),
+            tile("–" if s.retention_30d is None else f"{pct(s.retention_young)} · {pct(s.retention_mature)}",
+                 "remembered: young · mature",
+                 "Share of reviews in the last 30 days that you remembered, for young and for "
+                 f"mature words (a review counts as mature if the word had gone {stats.MATURE_DAYS} "
+                 f"days or more since its previous review). All together: {pct(s.retention_30d)}."),
             tile(f"{s.streak_days} d", "study streak", "Days in a row with at least one review."),
         ]):
             tiles.addWidget(t, 0, i)
@@ -131,21 +197,25 @@ class StatsPage(QWidget):
         holder.setLayout(tiles)
         lay.addWidget(holder)
 
-        cov = stats.coverage(self.store)
+        cov = stats.coverage_detail(self.store)
         lay.addWidget(heading("How much of the text you know"))
-        hero = QLabel(f'<span style="font-size:22pt; font-weight:600;">{100 * cov:.1f}%</span> '
-                      "of all words in the Hebrew Bible belong to words you have learned.")
+        hero = QLabel(f'<span style="font-size:22pt; font-weight:600;">{100 * cov.share:.1f}%</span> '
+                      "of all words in the Hebrew Bible belong to words you have learned; "
+                      f'<span style="font-size:22pt; font-weight:600;">{100 * cov.mature_share:.1f}%</span> '
+                      "to mature words.")
         hero.setWordWrap(True)
         lay.addWidget(hero)
+        lay.addWidget(legend())
         books = stats.coverage_by_book(self.store)
         lay.addWidget(progress_table(["Book", "Known words in the text", ""],
-                                     [(b.book, b.known, b.words) for b in books]))
+                                     [(b.book, b.mature, b.known - b.mature, b.words)
+                                      for b in books], unit="%"))
 
         lay.addWidget(heading("Decks"))
         progress = [stats.deck_progress(self.store, d) for d in decks.list_decks(self.store)]
         if progress:
             lay.addWidget(progress_table(["Deck", "Words learned", ""],
-                                         [(p.name, p.learned, p.total) for p in progress]))
+                                         [(p.name, p.mature, p.young, p.total) for p in progress]))
         else:
             lay.addWidget(QLabel("No decks yet."))
 

@@ -235,7 +235,7 @@ def test_stats_page(app, store):
     win.study.session.rate(win.study.item, Rating.Easy)     # graduate 'and'
     win.show_stats()
     texts = " ".join(w.text() for w in win.stats.body.findChildren(type(win.study.feedback)))
-    assert "1" in texts and "words learned" in texts
+    assert "0 mature words" in texts and "1 young words" in texts   # a new word just graduated
     assert "% " in texts or "%</span>" in texts           # coverage hero
     assert not win.stats.fit_btn.isEnabled()                 # too few reviews to fit
 
@@ -321,3 +321,39 @@ def test_deck_file_opened_from_finder(app, store, tmp_path, monkeypatch):
     app.processEvents()
     assert opened == [path] and app.pending == []
     app.window = None
+
+
+def test_deck_editor_counts_in_background(app, store):
+    """The word count runs on a worker thread; only the newest result is shown."""
+    import time
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.custom_radio.setChecked(True)
+    dlg.books.set_all(False)
+    dlg.books.set_book("Genesis", "1-3")
+    dlg.update_count()
+    first = dlg._generation
+    dlg.books.set_book("Jona")
+    dlg.update_count()                                  # supersedes the first count
+    assert dlg.count.text() == "Counting words…"
+    expected = dlg.card_count()
+    deadline = time.time() + 30
+    while "words in this deck" not in dlg.count.text() and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert dlg.count.text() == f"{expected} words in this deck"
+    dlg._count_done(first, 1)                            # a stale result is ignored
+    assert dlg.count.text() == f"{expected} words in this deck"
+
+
+def test_about_window(app):
+    from vocab import __version__
+    from vocab.gui.about import AboutDialog
+    dlg = AboutDialog()
+    assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == \
+        ["About", "How studying works", "Licence"]
+    text = [dlg.tabs.widget(i).toPlainText() for i in range(dlg.tabs.count())]
+    assert "flash card approach" in text[0] and "such as Anki" in text[0] and "BHSA" in text[0]
+    assert "Again" in text[1] and "your usual time" in text[1] and "21 days" in text[1]
+    assert "Christian Canu Højgaard" in text[2] and "CC BY-NC 4.0" in text[2]
+    assert "ETCBC" in text[2]

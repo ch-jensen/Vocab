@@ -92,7 +92,8 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
   and your own glosses for its words, but not your learning progress; on import, the recipient's
   own glosses are kept.
 * **Statistics.** How much of the text you know, overall and for each book; progress per deck;
-  your reviews over the last 30 days and the words due in the next 30.
+  your reviews over the last 30 days and the words due in the next 30. As in Anki, learned words
+  are split into *young* and *mature* (an interval of 21 days or more), with retention for each.
 * **Personal scheduling.** After 400 reviews, FSRS can be fitted to your own answers, so intervals
   match how quickly *you* forget. The fit is only used if it predicts your answers better.
 * **Glosses.** English (from the BHSA) and Danish glosses are included. Edit any gloss while

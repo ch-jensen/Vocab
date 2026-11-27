@@ -9,7 +9,12 @@ learning will be due again in a few minutes; the screen then says when (no
 "learn ahead": cards are never shown before they are due).
 The same lexeme is not shown twice in a row if anything else is available.
 
-The day starts at 04:00 local time, as in Anki.
+The day starts at 04:00 local time, as in Anki. As in Anki, learned words are
+due for the whole study day they fall on: a word due today at 19:48 can be
+reviewed from 04:00. Words in learning keep their exact times (1 or 10 minutes).
+A word left in learning from an earlier day (its step was never finished) is
+counted and studied with the due words at the start of the next day; "learning"
+only covers steps taken today.
 """
 
 from __future__ import annotations
@@ -26,9 +31,8 @@ from fsrs import Card, Rating, Scheduler, State
 from . import answers
 from .decks import ALL_STEMS, CardKey, Deck, deck_cards, occurrences
 from .occurrences import choose_occurrence
-from .store import Store, parse_ts, ts
+from .store import DAY_ROLLOVER_HOUR, Store, day_start, parse_ts, ts  # noqa: F401 (re-exported)
 
-DAY_ROLLOVER_HOUR = 4
 NEW = 0  # state_before for a card's first review
 
 
@@ -36,13 +40,16 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def day_start(now: datetime, tz: tzinfo | None = None) -> datetime:
-    """Start of the study day containing `now` (04:00 local), in UTC."""
-    local = now.astimezone(tz)
-    start = local.replace(hour=DAY_ROLLOVER_HOUR, minute=0, second=0, microsecond=0)
-    if local < start:
-        start -= timedelta(days=1)
-    return start.astimezone(timezone.utc)
+def scheduled_due(card: Card, tz: tzinfo | None = None) -> datetime:
+    """When a card is next due, as stored.
+
+    As in Anki, a learned word (FSRS state Review) is scheduled to a day, not a
+    time: its due time is set to the start of that study day (04:00 local).
+    Words in learning keep their exact due time (1 or 10 minutes).
+    """
+    if card.state == State.Review:
+        return day_start(card.due, tz)
+    return card.due
 
 
 @dataclass
@@ -151,30 +158,47 @@ class StudySession:
 
     def counts(self) -> Counts:
         now = ts(self.clock())
-        end_of_day = ts(day_start(self.clock(), self.tz) + timedelta(days=1))
+        today = day_start(self.clock(), self.tz)
+        end_of_day = ts(today + timedelta(days=1))
         new_today, reviews_today = self._done_today()
-        learning, review, learning_later = self.con.execute("""
-            SELECT COALESCE(SUM(c.state IN (1, 3) AND c.due <= :now), 0),
-                   COALESCE(SUM(c.state = 2 AND c.due <= :now), 0),
-                   COALESCE(SUM(c.state IN (1, 3) AND c.due > :now AND c.due < :eod), 0)
+        learning, carried, review, learning_later = self.con.execute("""
+            SELECT
+              -- in learning, due now, from a step taken today
+              COALESCE(SUM(c.state IN (1, 3) AND c.due >= :sod AND c.due <= :now), 0),
+              -- left in learning from an earlier day: counted as due
+              COALESCE(SUM(c.state IN (1, 3) AND c.due < :sod), 0),
+              -- learned words due any time today
+              COALESCE(SUM(c.state = 2 AND c.due < :eod), 0),
+              -- in learning, coming back later today
+              COALESCE(SUM(c.state IN (1, 3) AND c.due > :now AND c.due < :eod), 0)
             FROM cards c JOIN temp.deck_keys k ON k.lex_id = c.lex_id AND k.stem = c.stem
-            """, {"now": now, "eod": end_of_day}).fetchone()
+            """, {"now": now, "sod": ts(today), "eod": end_of_day}).fetchone()
         unseen = self.con.execute("""
             SELECT COUNT(*) FROM temp.deck_keys k
             WHERE NOT EXISTS (SELECT 1 FROM cards c WHERE c.lex_id = k.lex_id AND c.stem = k.stem)
             """).fetchone()[0]
         return Counts(new=min(unseen, max(self.cfg.new_per_day - new_today, 0)),
                       learning=learning,
-                      review=min(review, max(self.cfg.max_reviews_per_day - reviews_today, 0)),
+                      review=carried + min(review,
+                                           max(self.cfg.max_reviews_per_day - reviews_today, 0)),
                       learning_later=learning_later)
 
-    def _due_cards(self, states: tuple[int, ...], until: datetime, limit: int) -> list[sqlite3.Row]:
+    def _due_cards(self, states: tuple[int, ...], until: datetime, limit: int,
+                   before: bool = False, since: datetime | None = None) -> list[sqlite3.Row]:
+        """Cards in `states` due at or before `until` (strictly before, if `before`),
+        and not before `since` if given."""
         marks = ",".join("?" * len(states))
+        op = "<" if before else "<="
+        params: list = [*states, ts(until)]
+        lower = ""
+        if since is not None:
+            lower = "AND c.due >= ?"
+            params.append(ts(since))
         return self.con.execute(f"""
             SELECT c.* FROM cards c
             JOIN temp.deck_keys k ON k.lex_id = c.lex_id AND k.stem = c.stem
-            WHERE c.state IN ({marks}) AND c.due <= ?
-            ORDER BY c.due LIMIT ?""", (*states, ts(until), limit)).fetchall()
+            WHERE c.state IN ({marks}) AND c.due {op} ? {lower}
+            ORDER BY c.due LIMIT ?""", (*params, limit)).fetchall()
 
     def _new_keys(self, limit: int) -> list[CardKey]:
         return [CardKey(r[0], r[1]) for r in self.con.execute("""
@@ -186,11 +210,20 @@ class StudySession:
         now = self.clock()
         new_today, reviews_today = self._done_today()
         out: list[tuple[CardKey, sqlite3.Row | None]] = []
-        for row in self._due_cards((State.Learning, State.Relearning), now, 2):
+        today = day_start(now, self.tz)
+        learning = (State.Learning, State.Relearning)
+        # 1. Learning steps taken today that are due now.
+        for row in self._due_cards(learning, now, 2, since=today):
+            out.append((CardKey(row["lex_id"], row["stem"]), row))
+        # 2. Due: words left in learning from an earlier day, then learned words due
+        #    any time today (not only what is due this minute).
+        for row in self._due_cards(learning, today, 2, before=True):
             out.append((CardKey(row["lex_id"], row["stem"]), row))
         review_left = self.cfg.max_reviews_per_day - reviews_today
         if review_left > 0:
-            for row in self._due_cards((State.Review,), now, min(review_left, 2)):
+            end_of_day = today + timedelta(days=1)
+            for row in self._due_cards((State.Review,), end_of_day, min(review_left, 2),
+                                       before=True):
                 out.append((CardKey(row["lex_id"], row["stem"]), row))
         new_left = self.cfg.new_per_day - new_today
         if new_left > 0:
@@ -248,7 +281,7 @@ class StudySession:
         out = {}
         for rating in Rating:
             card = card_from_row(row) if row else Card(card_id=0, state=State.Learning, due=now)
-            out[rating] = self.scheduler.review_card(card, rating, now)[0].due
+            out[rating] = scheduled_due(self.scheduler.review_card(card, rating, now)[0], self.tz)
         return out
 
     # --- answering ---------------------------------------------------------
@@ -288,6 +321,7 @@ class StudySession:
             state_before = int(card.state)
 
         card, _log = self.scheduler.review_card(card, rating, now, duration_ms)
+        card.due = scheduled_due(card, self.tz)     # learned words: 04:00 on their day
         self.con.execute("""
             UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?, last_review = ?
             WHERE card_id = ?""",

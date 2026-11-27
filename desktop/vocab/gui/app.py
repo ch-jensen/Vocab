@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from PySide6.QtCore import QEvent, QTimer
+from PySide6.QtCore import QEvent, QRunnable, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QFontDatabase, QIcon, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox,
                                QStackedWidget)
@@ -18,6 +18,7 @@ from .. import __version__
 from .. import glosses
 from ..migrate import import_score_csv
 from ..store import APP_ROOT, Store
+from .about import AboutDialog
 from .home import HomePage
 from .stats_page import StatsPage
 from .study import StudyPage
@@ -59,18 +60,6 @@ def configure(app: QApplication) -> None:
     app.setFont(font)
     app.setStyleSheet(STYLE)
 
-ABOUT = f"""<h3>Vocab {__version__}</h3>
-<p>Vocabulary training for Biblical Hebrew and Aramaic with attested forms
-and FSRS scheduling.</p>
-<p><b>Data:</b> BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis) by the
-Eep Talstra Centre for Bible and Computer (ETCBC), licensed
-<a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>.
-<a href="https://github.com/ETCBC/bhsa">github.com/ETCBC/bhsa</a></p>
-<p><b>Scheduling:</b> <a href="https://github.com/open-spaced-repetition/py-fsrs">py-fsrs</a>
-and <a href="https://github.com/open-spaced-repetition/fsrs-rs-python">fsrs-rs</a>
-(MIT/BSD licences). <b>Interface:</b> Qt for Python (LGPL).
-<b>Font:</b> Ezra SIL by SIL International
-(<a href="https://openfontlicense.org">SIL Open Font License</a>).</p>"""
 
 
 class MainWindow(QMainWindow):
@@ -118,7 +107,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(quit_action)
         help_menu = self.menuBar().addMenu("&Help")
         about = QAction("&About Vocab", self)
-        about.triggered.connect(lambda: QMessageBox.about(self, "About Vocab", ABOUT))
+        about.setMenuRole(QAction.AboutRole)          # macOS: in the application menu
+        about.triggered.connect(lambda: AboutDialog(self).exec())
         help_menu.addAction(about)
 
         self.show_home()
@@ -181,6 +171,27 @@ class MainWindow(QMainWindow):
         self.home.refresh()
 
 
+class _Prewarm(QRunnable):
+    """After start-up, do the one-time counts in the background (read-only connection),
+    so the statistics and new decks are quick when first opened."""
+
+    def __init__(self, store: Store):
+        super().__init__()
+        self.store = store
+
+    def run(self) -> None:
+        from .. import decks as decks_mod, stats as stats_mod
+        try:
+            con = self.store.read_only_connection()
+            try:
+                decks_mod._askable_stems(con)
+                stats_mod.word_counts(con)
+            finally:
+                con.close()
+        except Exception:     # only a speed-up; the app computes these itself if needed
+            pass
+
+
 class VocabApplication(QApplication):
     """QApplication that also receives files opened from the Finder on macOS.
 
@@ -236,6 +247,7 @@ def main(argv=None) -> int:
         return 1
     window = MainWindow(store)
     window.show()
+    QThreadPool.globalInstance().start(_Prewarm(store))
     if args.deck_file and args.deck_file.lower().endswith(".vocabdeck"):
         app.open_deck_file(args.deck_file)
     app.set_window(window)

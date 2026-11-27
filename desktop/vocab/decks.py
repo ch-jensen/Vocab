@@ -148,8 +148,13 @@ def _in(column: str, values: list) -> tuple[str, list]:
     return f"{column} IN ({','.join('?' * len(values))})", list(values)
 
 
-def occurrence_conditions(cfg: DeckConfig) -> tuple[list[str], list]:
-    """Conditions on bhsa.words w joined with bhsa.verses v."""
+def occurrence_conditions(cfg: DeckConfig, con: sqlite3.Connection) -> tuple[list[str], list]:
+    """Conditions on bhsa.words w for the occurrence filters (stem, tense, suffix, passage).
+
+    Passages are turned into ranges of word nodes: BHSA numbers the words in
+    canonical order, so the words of a chapter range are one contiguous range.
+    That lets SQLite use the indexes instead of looking up each word's verse.
+    """
     conds, params = [], []
     if cfg.stems is not None:
         sql, p = _in("w.stem", cfg.stems)
@@ -164,16 +169,17 @@ def occurrence_conditions(cfg: DeckConfig) -> tuple[list[str], list]:
     elif cfg.suffix == "without":
         conds.append("w.has_suffix = 0")
     if cfg.passages:
-        ors = []
-        for p in cfg.passages:
-            ors.append("(v.book = ? AND v.chapter BETWEEN ? AND ?)")
-            params += [p.book, p.chapter_from or 1, p.chapter_to or 999]
-        conds.append("(" + " OR ".join(ors) + ")")
+        ranges = [r for p in cfg.passages if (r := passage_nodes(con, p)) is not None]
+        if ranges:
+            conds.append("(" + " OR ".join("w.node BETWEEN ? AND ?" for _ in ranges) + ")")
+            params += [n for r in ranges for n in r]
+        else:
+            conds.append("0")
     return conds, params
 
 
 def lexeme_conditions(cfg: DeckConfig) -> tuple[list[str], list]:
-    """Conditions on bhsa.lexemes l (and w.lex_id)."""
+    """Conditions on bhsa.lexemes l. (The plan and the gloss language are applied in Python.)"""
     conds, params = [], []
     if cfg.languages:
         sql, p = _in("l.language", cfg.languages)
@@ -189,15 +195,75 @@ def lexeme_conditions(cfg: DeckConfig) -> tuple[list[str], list]:
     if cfg.rank_max is not None:
         conds.append("l.rank <= ?")
         params.append(cfg.rank_max)
-    if cfg.plan_id:
-        conds.append("l.lex_id IN (SELECT lex_id FROM bhsa.plan_items WHERE plan_id = ?)")
-        params.append(cfg.plan_id)
-    if cfg.gloss_language != "English":
-        conds.append("(EXISTS (SELECT 1 FROM bhsa.glosses g WHERE g.lex_id = l.lex_id "
-                     "AND g.gloss_language = ?) OR EXISTS (SELECT 1 FROM user_glosses u "
-                     "WHERE u.lex_id = l.lex_id AND u.gloss_language = ?))")
-        params += [cfg.gloss_language, cfg.gloss_language]
     return conds, params
+
+
+# --- caches ---------------------------------------------------------------------
+# The BHSA database is read-only, so results that only depend on it (and on a
+# deck's settings) are kept while the app runs. Keys include the database file.
+
+_cache: dict[tuple, object] = {}
+
+
+def _bhsa_file(con: sqlite3.Connection) -> str:
+    for _seq, name, path in con.execute("PRAGMA database_list"):
+        if name == "bhsa":
+            return path
+    return ""
+
+
+def _cached(con: sqlite3.Connection, key: tuple, compute):
+    full = (_bhsa_file(con), *key)
+    if full not in _cache:
+        if len(_cache) > 500:
+            _cache.clear()
+        _cache[full] = compute()
+    return _cache[full]
+
+
+def passage_nodes(con: sqlite3.Connection, p: Passage) -> tuple[int, int] | None:
+    """First and last word node of a passage (None if it has no words)."""
+    key = ("passage", p.book, p.chapter_from or 1, p.chapter_to or 999)
+
+    def compute():
+        row = con.execute(
+            "SELECT MIN(w.node), MAX(w.node) FROM bhsa.verses v "
+            "JOIN bhsa.words w ON w.verse_id = v.verse_id "
+            "WHERE v.book = ? AND v.chapter BETWEEN ? AND ?", key[1:]).fetchone()
+        return (row[0], row[1]) if row[0] is not None else None
+    return _cached(con, key, compute)
+
+
+def _plan_positions(con: sqlite3.Connection, plan_id: str) -> dict[str, int]:
+    return _cached(con, ("plan", plan_id), lambda: {r[0]: r[1] for r in con.execute(
+        "SELECT lex_id, position FROM bhsa.plan_items WHERE plan_id = ?", (plan_id,))})
+
+
+def _askable_stems(con: sqlite3.Connection) -> frozenset:
+    """(lex_id, stem) pairs with at least one occurrence that can be asked."""
+    return _cached(con, ("askable",), lambda: frozenset(
+        (r[0], r[1]) for r in con.execute(
+            f"SELECT DISTINCT lex_id, stem FROM bhsa.words w WHERE {ASKABLE}")))
+
+
+def _glossed(con: sqlite3.Connection, gloss_language: str) -> set[str]:
+    """Lexemes with a gloss in a language (built in or the user's own)."""
+    builtin = _cached(con, ("glossed", gloss_language), lambda: frozenset(
+        r[0] for r in con.execute("SELECT DISTINCT lex_id FROM bhsa.glosses "
+                                  "WHERE gloss_language = ?", (gloss_language,))))
+    own = {r[0] for r in con.execute("SELECT DISTINCT lex_id FROM user_glosses "
+                                     "WHERE gloss_language = ?", (gloss_language,))}
+    return builtin | own
+
+
+def _selection_key(cfg: DeckConfig) -> tuple:
+    """The settings that decide which cards are in a deck (not the study settings)."""
+    return ("deck", cfg.plan_id, tuple(cfg.languages or ()),
+            tuple(cfg.pos) if cfg.pos is not None else None, cfg.rank_min, cfg.rank_max,
+            tuple(cfg.stems) if cfg.stems is not None else None,
+            tuple(cfg.tenses) if cfg.tenses is not None else None, cfg.suffix,
+            tuple((p.book, p.chapter_from, p.chapter_to) for p in cfg.passages or ()),
+            tuple(cfg.include_lex), tuple(cfg.exclude_lex), cfg.split_stems)
 
 
 def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
@@ -205,51 +271,73 @@ def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
 
     Plan decks follow the plan order; filter decks go from the most to the least
     frequent lexeme. With split_stems, a verb's stems follow each other, most
-    frequent stem first.
+    frequent stem first. Lexemes added by hand (include_lex) are always in the
+    deck; lexemes with no askable occurrence never are.
     """
+    keys = _cached(con, _selection_key(cfg), lambda: _compute_cards(con, cfg))
+    if cfg.gloss_language != "English":
+        allowed = _glossed(con, cfg.gloss_language)
+        included = set(cfg.include_lex)
+        keys = [k for k in keys if k.lex_id in allowed or k.lex_id in included]
+    return list(keys)
+
+
+def _compute_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
     lex_conds, lex_params = lexeme_conditions(cfg)
-    occ_conds, occ_params = occurrence_conditions(cfg)
-    where = " AND ".join(lex_conds + occ_conds) or "1"
-    params: list = [int(cfg.split_stems)]
-    plan_join = ""
-    if cfg.plan_id:
-        plan_join = "LEFT JOIN bhsa.plan_items p ON p.lex_id = w.lex_id AND p.plan_id = ?"
-        params.append(cfg.plan_id)
-    params += lex_params + occ_params
+    word_level = cfg.tenses is not None or cfg.suffix != "any" or bool(cfg.passages)
+    askable = _askable_stems(con)
 
-    include = ""
-    if cfg.include_lex:
-        sql, p = _in("w.lex_id", cfg.include_lex)
-        include = f" OR {sql}"
-        params += p
-    exclude = ""
-    if cfg.exclude_lex:
-        sql, p = _in("w.lex_id", cfg.exclude_lex)
-        exclude = f" AND NOT {sql}"
-        params += p
-
-    order_pos = "COALESCE(MIN(p.position), 1000000000)" if cfg.plan_id else "0"
-    if occ_conds:
-        # Occurrence filters: look at every word.
-        source = ("bhsa.words w JOIN bhsa.verses v ON v.verse_id = w.verse_id", "COUNT(*)")
-        askable = ASKABLE
+    if word_level:
+        # Filters on single occurrences: count the matching words.
+        occ_conds, occ_params = occurrence_conditions(cfg, con)
+        where = " AND ".join(lex_conds + occ_conds + [ASKABLE])
+        rows = con.execute(f"""
+            SELECT w.lex_id, w.stem, COUNT(*), l.freq
+            FROM bhsa.words w JOIN bhsa.lexemes l ON l.lex_id = w.lex_id
+            WHERE {where}
+            GROUP BY w.lex_id, w.stem""", lex_params + occ_params).fetchall()
     else:
-        # Lexeme filters only: the per-stem counts are enough (much faster).
-        source = ("bhsa.lexeme_stems w", "SUM(w.freq)")
-        askable = (f"EXISTS (SELECT 1 FROM bhsa.words x WHERE x.lex_id = w.lex_id "
-                   f"AND x.stem = w.stem AND {ASKABLE.replace('w.', 'x.')})")
-    rows = con.execute(f"""
-        SELECT w.lex_id,
-               CASE WHEN ? AND w.stem <> 'NA' THEN w.stem ELSE '*' END AS card_stem,
-               {source[1]} AS n, MIN(l.freq) AS lex_freq, {order_pos} AS plan_pos
-        FROM {source[0]}
-        JOIN bhsa.lexemes l ON l.lex_id = w.lex_id
-        {plan_join}
-        WHERE (({where}){include}){exclude} AND {askable}
-        GROUP BY w.lex_id, card_stem
-        ORDER BY plan_pos, lex_freq DESC, w.lex_id, n DESC
-    """, params).fetchall()
-    return [CardKey(r[0], r[1]) for r in rows]
+        # Lexeme filters (and stems) only: the per-stem counts are enough.
+        conds, params = list(lex_conds), list(lex_params)
+        if cfg.stems is not None:
+            sql, p = _in("s.stem", cfg.stems)
+            conds.append(f"(s.stem = 'NA' OR {sql})")      # the stem filter only applies to verbs
+            params += p
+        where = " AND ".join(conds) or "1"
+        rows = [r for r in con.execute(f"""
+            SELECT s.lex_id, s.stem, s.freq, l.freq
+            FROM bhsa.lexeme_stems s JOIN bhsa.lexemes l ON l.lex_id = s.lex_id
+            WHERE {where}""", params) if (r[0], r[1]) in askable]
+
+    if cfg.include_lex:
+        # Words added by hand are in the deck whatever the filters say.
+        sql, p = _in("s.lex_id", cfg.include_lex)
+        present = {(r[0], r[1]) for r in rows}
+        rows += [r for r in con.execute(f"""
+            SELECT s.lex_id, s.stem, s.freq, l.freq
+            FROM bhsa.lexeme_stems s JOIN bhsa.lexemes l ON l.lex_id = s.lex_id
+            WHERE {sql}""", p) if (r[0], r[1]) in askable and (r[0], r[1]) not in present]
+
+    excluded = set(cfg.exclude_lex)
+    included = set(cfg.include_lex)
+    positions = _plan_positions(con, cfg.plan_id) if cfg.plan_id else None
+
+    grouped: dict[tuple[str, str], list] = {}
+    for lex_id, stem, n, lex_freq in rows:
+        if lex_id in excluded:
+            continue
+        if positions is not None and lex_id not in positions and lex_id not in included:
+            continue
+        card_stem = stem if cfg.split_stems and stem != "NA" else ALL_STEMS
+        entry = grouped.setdefault((lex_id, card_stem), [0, lex_freq])
+        entry[0] += n
+
+    def order(item):
+        (lex_id, _stem), (n, lex_freq) = item
+        plan_pos = positions.get(lex_id, 1_000_000_000) if positions is not None else 0
+        return (plan_pos, -lex_freq, lex_id, -n)
+
+    return [CardKey(lex_id, stem) for (lex_id, stem), _ in sorted(grouped.items(), key=order)]
 
 
 def occurrences(con: sqlite3.Connection, cfg: DeckConfig, key: CardKey) -> list[sqlite3.Row]:
@@ -259,14 +347,12 @@ def occurrences(con: sqlite3.Connection, cfg: DeckConfig, key: CardKey) -> list[
     askable occurrences of the card when none pass the filters (e.g. for a
     lexeme the user added by hand).
     """
-    base = ("SELECT w.node, w.form_utf8 FROM bhsa.words w "
-            "JOIN bhsa.verses v ON v.verse_id = w.verse_id "
-            f"WHERE w.lex_id = ? AND {ASKABLE}")
+    base = f"SELECT w.node, w.form_utf8 FROM bhsa.words w WHERE w.lex_id = ? AND {ASKABLE}"
     params: list = [key.lex_id]
     if key.stem != ALL_STEMS:
         base += " AND w.stem = ?"
         params.append(key.stem)
-    conds, occ_params = occurrence_conditions(cfg)
+    conds, occ_params = occurrence_conditions(cfg, con)
     if conds:
         rows = con.execute(base + " AND " + " AND ".join(conds) + " ORDER BY w.node",
                            params + occ_params).fetchall()
