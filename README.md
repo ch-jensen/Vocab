@@ -58,11 +58,16 @@ the Center of Biblical Languages and Computing and the ETCBC, with Greek glosses
      Macs (see Apple menu → *About This Mac*). Open it and drag Vocab to *Applications*. The app
      isn't notarized by Apple, so the first time macOS says it can't verify it: open
      *System Settings → Privacy & Security*, scroll down and click *Open Anyway*.
-2. Click **New deck…**, choose the text (Hebrew Bible or Greek New Testament) and keep the plan
-   *by frequency* to start with the most common words,
-   or make your own selection.
-3. Click **Study**. Type the meaning and press Enter, or switch the deck to *show the answer and
-   rate yourself*, as in Anki.
+2. Click the **New deck…** card, choose the text (Hebrew Bible or Greek New Testament) and keep
+   the plan *by frequency* to start with the most common words, or make your own selection.
+3. Click **Study** on the deck's card. Type the meaning and press Enter, or switch the deck to
+   *show the answer and rate yourself*, as in Anki.
+
+The front page shows a card for each deck, with its text, your progress and today's new, learning
+and due words. *Study* is faded when a deck has nothing left for today. The **⋯** button on a card
+(or a right-click) edits, exports or deletes the deck. A bar at the top shows your study streak,
+the words you have learned, your reviews in total and over the last week, and a link to the
+statistics.
 
 Your progress is saved automatically (Windows: `%APPDATA%\Vocab`; Mac:
 `~/Library/Application Support/Vocab`). It is kept when you update or remove the app. To update,
@@ -99,10 +104,12 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
   it to your students (double-clicking the file imports it). The file contains the deck's settings
   and your own glosses for its words, but not your learning progress; on import, the recipient's
   own glosses are kept.
-* **Statistics.** How much of the text you know, overall and for each book; progress per deck;
-  your reviews over the last 30 days and the words due in the next 30. As in Anki, learned words
-  are split into *young* and *mature* (an interval of 21 days or more), with retention for each.
-* **Personal scheduling.** After 400 reviews, FSRS can be fitted to your own answers, so intervals
+* **Statistics.** An overview with a card for each text (Hebrew Bible, Greek New Testament) and
+  your overall progress: reviews over the last 30 days and words due in the next 30. *Details*
+  on a text's card shows how much of it you know, overall and for each book, progress per deck
+  and its own charts. As in Anki, learned words are split into *young* and *mature* (an interval
+  of 21 days or more), with retention for each.
+* **Personal scheduling.** At the bottom of the statistics page: after 400 reviews, FSRS can be fitted to your own answers, so intervals
   match how quickly *you* forget. The fit is only used if it predicts your answers better.
 * **Glosses.** Hebrew: English (from the BHSA) and Danish. Greek: Danish, English, Dutch,
   Portuguese, Swahili and (partly) Spanish, from Bible Online Learner. Edit any gloss while
@@ -169,3 +176,4 @@ desktop app.
 * Oct. 31 2025: Small fixes.
 * Jan. 5 2026: Average time added to the statistics; requirements file.
 * Nov. 26 2026: Desktop app for Windows (version 0.1.0) with FSRS scheduling, decks, statistics and an installer.
+* Nov. 28 2026: Greek New Testament (Nestle 1904) with glosses from Bible Online Learner; statistics per text; deck cards on the front page.
