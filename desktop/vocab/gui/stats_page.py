@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QRectF, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+from PySide6.QtWidgets import (QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                                QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -308,17 +308,10 @@ class StatsPage(ScrollPage):
 
         charts(lay, self.store)
 
-        scheduling = QLabel(f"Personal scheduling: {optimize.status(self.store)} "
-                            '<a href="#">Change…</a>')
-        scheduling.setObjectName("muted")
-        scheduling.linkActivated.connect(self.open_scheduling)
-        lay.addSpacing(8)
-        lay.addWidget(scheduling)
+        lay.addWidget(heading("Personal scheduling"))
+        self.scheduling = SchedulingSection(self.store)
+        lay.addWidget(self.scheduling)
         lay.addStretch()
-
-    def open_scheduling(self, *_):
-        SchedulingDialog(self.store, self).exec()
-        self.refresh()
 
 
 class CorpusStatsPage(ScrollPage):
@@ -370,20 +363,20 @@ class CorpusStatsPage(ScrollPage):
         lay.addStretch()
 
 
-class SchedulingDialog(QDialog):
-    """Fitting FSRS to the user's own answers (or going back to the defaults)."""
+class SchedulingSection(QWidget):
+    """Fitting FSRS to the user's own answers (or going back to the defaults),
+    shown at the bottom of the statistics overview."""
 
     def __init__(self, store: Store, parent=None):
         super().__init__(parent)
         self.store = store
         self._thread: QThread | None = None
-        self.setWindowTitle("Personal scheduling")
-        self.setMinimumWidth(480)
         explain = QLabel(
             "FSRS can be fitted to your own answers, so that intervals match how quickly "
             f"<i>you</i> forget. This needs at least {optimize.MIN_REVIEWS} reviews; the "
             "fitted parameters are only used if they predict your answers better.")
         explain.setWordWrap(True)
+        explain.setObjectName("muted")
         self.fit_status = QLabel(optimize.status(store))
         self.fit_status.setWordWrap(True)
         self.fit_btn = QPushButton("Fit to my answers")
@@ -395,17 +388,15 @@ class SchedulingDialog(QDialog):
         self.reset_btn = QPushButton("Use default parameters")
         self.reset_btn.setEnabled(fsrs_parameters(store) is not None)
         self.reset_btn.clicked.connect(self.reset_parameters)
-        close = QDialogButtonBox(QDialogButtonBox.Close)
-        close.rejected.connect(self.reject)
         row = QHBoxLayout()
         row.addWidget(self.fit_btn)
         row.addWidget(self.reset_btn)
         row.addStretch()
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(explain)
         layout.addWidget(self.fit_status)
         layout.addLayout(row)
-        layout.addWidget(close)
 
     def fit(self) -> None:
         data = optimize.training_data(self.store)

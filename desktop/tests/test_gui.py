@@ -237,8 +237,8 @@ def test_stats_page(app, store):
     texts = " ".join(w.text() for w in win.stats.body.findChildren(type(win.study.feedback)))
     assert "0 mature words" in texts and "1 young words" in texts   # a new word just graduated
     assert "% " in texts or "%</span>" in texts           # coverage hero
-    from vocab.gui.stats_page import SchedulingDialog
-    assert not SchedulingDialog(store).fit_btn.isEnabled()    # too few reviews to fit
+    assert not win.stats.scheduling.fit_btn.isEnabled()      # too few reviews to fit
+    assert "Default FSRS parameters" in win.stats.scheduling.fit_status.text()
 
 
 def test_gloss_dialog_from_study(app, store):
