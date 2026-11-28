@@ -15,7 +15,8 @@ from ..session import Outcome, StudyItem, StudySession, expected_gloss
 from ..store import Store
 from .counts import CountsBar
 from .gloss_dialog import GlossDialog
-from .common import (ACCENT, BAD, GOOD, MUTED, POS_LABELS, TENSE_LABELS, hebrew_font,
+from .common import (ACCENT, BAD, GOOD, GREEK_LABELS, MUTED, POS_LABELS, TENSE_LABELS,
+                     hebrew_font, text_font,
                      interval_text, stem_label)
 
 RATING_LABELS = {Rating.Again: "Again", Rating.Hard: "Hard", Rating.Good: "Good", Rating.Easy: "Easy"}
@@ -28,7 +29,8 @@ def clause_html(item: StudyItem) -> str:
         if w.node == item.node:
             form = f'<span style="color:{ACCENT}; font-weight:bold;">{form}</span>'
         parts.append(form + html.escape(w.trailer))
-    return f'<div dir="rtl" align="center">{"".join(parts)}</div>'
+    direction = "rtl" if item.rtl else "ltr"
+    return f'<div dir="{direction}" align="center">{"".join(parts)}</div>'
 
 
 class StudyPage(QWidget):
@@ -207,6 +209,9 @@ class StudyPage(QWidget):
         for w in (self.clause, self.reference, self.controls):
             w.show()
         item = self.item
+        # Hebrew is shown right to left in a Hebrew font, Greek left to right in a Greek font.
+        self.clause.setFont(text_font(item.language, 30 if item.rtl else 26))
+        self.lexeme_hint.setFont(text_font(item.language, 18))
         self.clause.setText(clause_html(item))
         new = f' · <span style="color:{GOOD}">new word</span>' if item.is_new else ""
         self.reference.setTextFormat(Qt.RichText)
@@ -300,9 +305,15 @@ class StudyPage(QWidget):
         item = self.item
         self.lexeme_hint.setText(item.voc_lex_utf8)
         self.lexeme_hint.show()
-        lines = [f'{POS_LABELS.get(item.sp, item.sp)} · {item.freq}× in the Bible · '
+        where = "in the New Testament" if item.language == "Greek" else "in the Bible"
+        lines = [f'{POS_LABELS.get(item.sp, item.sp)} · {item.freq}× {where} · '
                  f'frequency rank {item.rank + 1}']
-        if item.stem != "NA":
+        if item.language == "Greek":
+            parts = [GREEK_LABELS.get(v, v) for v in (item.tense, item.voice, item.mood, item.noun_case)
+                     if v and v != "NA"]
+            if parts:
+                lines.append(f'<span style="color:{MUTED}">this form: {" ".join(parts)}</span>')
+        elif item.stem != "NA":
             form = f"this form: {stem_label(item.stem)} {TENSE_LABELS.get(item.tense, item.tense)}"
             stems = ", ".join(f"{stem_label(s)} {n}" for s, n in self.store.stem_counts(item.key.lex_id))
             lines.append(f'<span style="color:{MUTED}">{form} · stems: {stems}</span>')

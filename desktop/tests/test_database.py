@@ -26,17 +26,46 @@ def one(con, sql, *args):
 
 def test_meta(con):
     meta = dict(con.execute("SELECT key, value FROM meta"))
-    assert meta["schema_version"] == "1"
+    assert meta["schema_version"] == "2"
     assert meta["bhsa_version"] == "2021"
     assert "CC BY-NC" in meta["license"]
+    assert '"n1904": "1.0.0"' in meta["corpora"]
 
 
 def test_sizes(con):
     # BHSA 2021: 426,590 words, 23,213 verses, 39 books.
-    assert one(con, "SELECT COUNT(*) FROM words") == 426590
-    assert one(con, "SELECT COUNT(*) FROM verses") == 23213
-    assert one(con, "SELECT COUNT(DISTINCT book) FROM verses") == 39
-    assert one(con, "SELECT COUNT(*) FROM lexemes") > 9000
+    bhsa = "lex_id IN (SELECT lex_id FROM lexemes WHERE corpus = 'bhsa')"
+    assert one(con, f"SELECT COUNT(*) FROM words WHERE {bhsa}") == 426590
+    assert one(con, "SELECT COUNT(*) FROM verses WHERE corpus = 'bhsa'") == 23213
+    assert one(con, "SELECT COUNT(DISTINCT book) FROM verses WHERE corpus = 'bhsa'") == 39
+    assert one(con, "SELECT COUNT(*) FROM lexemes WHERE corpus = 'bhsa'") > 9000
+
+
+def test_greek_new_testament(con):
+    # N1904: 137,779 words, 7,944 verses, 27 books, 5,396 lemmas.
+    greek = "lex_id IN (SELECT lex_id FROM lexemes WHERE corpus = 'n1904')"
+    assert one(con, f"SELECT COUNT(*) FROM words WHERE {greek}") == 137779
+    assert one(con, "SELECT COUNT(*) FROM verses WHERE corpus = 'n1904'") == 7944
+    assert one(con, "SELECT COUNT(DISTINCT book) FROM verses WHERE corpus = 'n1904'") == 27
+    assert one(con, "SELECT COUNT(*) FROM lexemes WHERE language = 'Greek'") == 5396
+    # Greek and Hebrew node ranges do not overlap, and Greek words come after Hebrew ones.
+    assert one(con, f"SELECT MIN(node) FROM words WHERE {greek}") > \
+        one(con, "SELECT MAX(node) FROM words WHERE lex_id LIKE 'hbo:%' OR lex_id LIKE 'arc:%'")
+    # Every Greek word has a context range around itself; Hebrew words use clauses.
+    assert one(con, f"SELECT COUNT(*) FROM words WHERE {greek} AND NOT "
+                    "(ctx_from <= node AND node <= ctx_to)") == 0
+    assert one(con, "SELECT COUNT(*) FROM words WHERE ctx_from IS NOT NULL AND lex_id LIKE 'hbo:%'") == 0
+    # Text is in NFC, like the gloss files.
+    import unicodedata
+    forms = [f for (f,) in con.execute(f"SELECT form_utf8 FROM words WHERE {greek} LIMIT 5000")]
+    assert all(f == unicodedata.normalize("NFC", f) for f in forms)
+    # Glosses from Bible Online Learner for every lemma in English and Danish.
+    for language in ("English", "Danish"):
+        assert one(con, "SELECT COUNT(*) FROM glosses WHERE gloss_language = ? AND lex_id LIKE 'grc:%'",
+                   language) == 5396
+    assert one(con, "SELECT gloss FROM glosses WHERE lex_id = 'grc:λόγος' AND gloss_language = 'Danish'") == "ord"
+    assert one(con, "SELECT sp FROM lexemes WHERE lex_id = 'grc:Ἰησοῦς'") == "nmpr"
+    assert one(con, "SELECT lex_id FROM plan_items WHERE plan_id = 'greek-frequency' AND position = 1") == "grc:ὁ"
 
 
 def test_word_counts_match_lexeme_frequency(con):

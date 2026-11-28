@@ -479,9 +479,10 @@ def test_coverage_matches_word_by_word_count(store):
     known = store.con.execute("""SELECT COUNT(*) FROM bhsa.words w WHERE EXISTS (
         SELECT 1 FROM cards c WHERE c.lex_id = w.lex_id AND c.state = 2
         AND (c.stem = '*' OR c.stem = w.stem))""").fetchone()[0]
-    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words").fetchone()[0]
+    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words w JOIN bhsa.lexemes l USING (lex_id) "
+                              "WHERE l.corpus = 'bhsa'").fetchone()[0]
     assert stats.coverage(store) == pytest.approx(known / total)
-    books = stats.coverage_by_book(store)
+    books = stats.coverage_by_book(store, corpus="bhsa")
     assert sum(b.known for b in books) == known and sum(b.words for b in books) == total
 
 

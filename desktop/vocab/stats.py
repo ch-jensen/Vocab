@@ -156,11 +156,20 @@ def _word_counts(store: Store) -> list[tuple[str, str, int, int]]:
     return word_counts(store.con)
 
 
-def _book_names(store: Store) -> list[tuple[int, str]]:
+def _book_names(store: Store) -> list[tuple[int, str, str]]:
+    """(book_order, English name, corpus) in canonical order."""
     con = store.con
     return decks_mod._cached(con, ("book names",), lambda: [
-        (r[0], r[1].replace("_", " ")) for r in con.execute(
-            "SELECT book_order, book_en FROM bhsa.verses GROUP BY book_order ORDER BY book_order")])
+        (r[0], r[1].replace("_", " "), r[2]) for r in con.execute(
+            "SELECT book_order, book_en, corpus FROM bhsa.verses "
+            "GROUP BY book_order ORDER BY book_order")])
+
+
+def corpora_with_progress(store: Store) -> list[str]:
+    """Corpora with at least one studied word, in the order of decks_mod.CORPORA."""
+    used = {r[0] for r in store.con.execute(
+        "SELECT DISTINCT l.corpus FROM cards c JOIN bhsa.lexemes l ON l.lex_id = c.lex_id")}
+    return [c for c in decks_mod.CORPORA if c in used]
 
 
 def _known_by_book(store: Store, tz: tzinfo | None = None) -> dict[int, list[int]]:
@@ -196,14 +205,17 @@ class Coverage:
         return self.mature / self.words if self.words else 0.0
 
 
-def coverage_detail(store: Store, tz: tzinfo | None = None) -> Coverage:
-    totals = _known_by_book(store, tz).values()
-    return Coverage(*(sum(t[i] for t in totals) for i in range(3)))
+def coverage_detail(store: Store, corpus: str = "bhsa", tz: tzinfo | None = None) -> Coverage:
+    """Coverage of one corpus (the Hebrew Bible by default, or 'n1904')."""
+    totals = _known_by_book(store, tz)
+    orders = [order for order, _name, c in _book_names(store) if c == corpus]
+    rows = [totals.get(order, [0, 0, 0]) for order in orders]
+    return Coverage(*(sum(t[i] for t in rows) for i in range(3)))
 
 
-def coverage(store: Store) -> float:
-    """Share of all word occurrences in the Bible whose word is learned."""
-    return coverage_detail(store).share
+def coverage(store: Store, corpus: str = "bhsa") -> float:
+    """Share of all word occurrences in a corpus whose word is learned."""
+    return coverage_detail(store, corpus).share
 
 
 @dataclass
@@ -211,10 +223,12 @@ class BookCoverage(Coverage):
     book: str = ""   # English name
 
 
-def coverage_by_book(store: Store, tz: tzinfo | None = None) -> list[BookCoverage]:
+def coverage_by_book(store: Store, tz: tzinfo | None = None,
+                     corpus: str | None = None) -> list[BookCoverage]:
+    """Coverage per book, of one corpus or (corpus=None) of all."""
     totals = _known_by_book(store, tz)
     return [BookCoverage(*totals.get(order, [0, 0, 0]), book=name)
-            for order, name in _book_names(store)]
+            for order, name, c in _book_names(store) if corpus is None or c == corpus]
 
 
 @dataclass

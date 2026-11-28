@@ -29,6 +29,11 @@ from .store import Store, ts
 
 ALL_STEMS = "*"   # card stem for a whole-lexeme card
 
+# The corpora in the database, with the languages each contains.
+CORPORA = {"bhsa": "Hebrew Bible (BHSA)", "n1904": "Greek New Testament (Nestle 1904)"}
+CORPUS_LANGUAGES = {"bhsa": ["Hebrew", "Aramaic"], "n1904": ["Greek"]}
+RTL_LANGUAGES = {"Hebrew", "Aramaic"}
+
 # Condition on bhsa.words w for occurrences that can be shown as a question.
 ASKABLE = "(w.qere_utf8 IS NULL AND w.form_utf8 <> '')"
 
@@ -101,12 +106,15 @@ def passages_by_book(passages: list[Passage] | None) -> dict[str, list[tuple[int
 @dataclass
 class DeckConfig:
     plan_id: str | None = None
+    corpus: str = "bhsa"                  # 'bhsa' (Hebrew Bible) | 'n1904' (Greek NT)
     languages: list[str] = field(default_factory=lambda: ["Hebrew"])
     pos: list[str] | None = None          # BHSA sp values; None = all
     rank_min: int | None = None           # BHSA rank_lex, 0 = most frequent
     rank_max: int | None = None
     stems: list[str] | None = None        # verbs only; None = all
     tenses: list[str] | None = None       # verbs only; None = all
+    voices: list[str] | None = None       # Greek verbs only; None = all
+    moods: list[str] | None = None        # Greek verbs only; None = all
     suffix: str = "any"                   # 'any' | 'with' | 'without'
     passages: list[Passage] | None = None
     include_lex: list[str] = field(default_factory=list)
@@ -136,6 +144,8 @@ class DeckConfig:
     def validate(self) -> None:
         if self.suffix not in ("any", "with", "without"):
             raise ValueError(f"suffix must be any/with/without, not {self.suffix!r}")
+        if self.corpus not in CORPORA:
+            raise ValueError(f"unknown corpus {self.corpus!r}")
         if self.answer_mode not in ("typed", "self"):
             raise ValueError(f"answer_mode must be typed/self, not {self.answer_mode!r}")
         if not 0.5 <= self.desired_retention <= 0.99:
@@ -164,6 +174,11 @@ def occurrence_conditions(cfg: DeckConfig, con: sqlite3.Connection) -> tuple[lis
         sql, p = _in("w.tense", cfg.tenses)
         conds.append(f"(w.sp <> 'verb' OR {sql})")
         params += p
+    for column, values in (("w.voice", cfg.voices), ("w.mood", cfg.moods)):
+        if values is not None:
+            sql, p = _in(column, values)
+            conds.append(f"(w.sp <> 'verb' OR {sql})")
+            params += p
     if cfg.suffix == "with":
         conds.append("w.has_suffix = 1")
     elif cfg.suffix == "without":
@@ -180,8 +195,8 @@ def occurrence_conditions(cfg: DeckConfig, con: sqlite3.Connection) -> tuple[lis
 
 def lexeme_conditions(cfg: DeckConfig) -> tuple[list[str], list]:
     """Conditions on bhsa.lexemes l. (The plan and the gloss language are applied in Python.)"""
-    conds, params = [], []
-    if cfg.languages:
+    conds, params = ["l.corpus = ?"], [cfg.corpus]
+    if cfg.languages and len(CORPUS_LANGUAGES[cfg.corpus]) > 1:   # Hebrew and/or Aramaic
         sql, p = _in("l.language", cfg.languages)
         conds.append(sql)
         params += p
@@ -258,10 +273,12 @@ def _glossed(con: sqlite3.Connection, gloss_language: str) -> set[str]:
 
 def _selection_key(cfg: DeckConfig) -> tuple:
     """The settings that decide which cards are in a deck (not the study settings)."""
-    return ("deck", cfg.plan_id, tuple(cfg.languages or ()),
+    return ("deck", cfg.corpus, cfg.plan_id, tuple(cfg.languages or ()),
             tuple(cfg.pos) if cfg.pos is not None else None, cfg.rank_min, cfg.rank_max,
             tuple(cfg.stems) if cfg.stems is not None else None,
-            tuple(cfg.tenses) if cfg.tenses is not None else None, cfg.suffix,
+            tuple(cfg.tenses) if cfg.tenses is not None else None,
+            tuple(cfg.voices) if cfg.voices is not None else None,
+            tuple(cfg.moods) if cfg.moods is not None else None, cfg.suffix,
             tuple((p.book, p.chapter_from, p.chapter_to) for p in cfg.passages or ()),
             tuple(cfg.include_lex), tuple(cfg.exclude_lex), cfg.split_stems)
 
@@ -284,7 +301,8 @@ def deck_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
 
 def _compute_cards(con: sqlite3.Connection, cfg: DeckConfig) -> list[CardKey]:
     lex_conds, lex_params = lexeme_conditions(cfg)
-    word_level = cfg.tenses is not None or cfg.suffix != "any" or bool(cfg.passages)
+    word_level = (cfg.tenses is not None or cfg.voices is not None or cfg.moods is not None
+                  or cfg.suffix != "any" or bool(cfg.passages))
     askable = _askable_stems(con)
 
     if word_level:
@@ -404,5 +422,6 @@ def list_decks(store: Store) -> list[Deck]:
 
 def plans(store: Store) -> list[sqlite3.Row]:
     return store.con.execute(
-        "SELECT p.plan_id, p.name, p.description, COUNT(i.lex_id) AS size "
-        "FROM bhsa.plans p JOIN bhsa.plan_items i USING (plan_id) GROUP BY p.plan_id").fetchall()
+        "SELECT p.plan_id, p.corpus, p.name, p.description, COUNT(i.lex_id) AS size "
+        "FROM bhsa.plans p JOIN bhsa.plan_items i USING (plan_id) GROUP BY p.plan_id "
+        "ORDER BY MIN(p.rowid)").fetchall()
