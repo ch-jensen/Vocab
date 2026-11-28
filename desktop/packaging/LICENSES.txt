@@ -20,8 +20,7 @@ Greek New Testament (Nestle 1904)
   https://github.com/Clear-Bible/macula-greek
 
 Greek glosses
-  From Bible Online Learner by Ezer IT Consulting (Claus Toendering), used with
-  permission: https://learner.bible, https://github.com/EzerIT/BibleOL
+  From Bible Online Learner by Ezer IT Consulting (Claus Toendering): https://learner.bible, https://github.com/EzerIT/BibleOL
   Two Danish glosses are corrected in Vocab.
 
 Ezra SIL font
