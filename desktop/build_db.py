@@ -476,6 +476,29 @@ def add_n1904(con: sqlite3.Connection, api, gloss_folder: Path) -> None:
               + (f" ({fallback} from the Berean gloss)" if fallback else ""))
 
 
+def apply_corrections(con: sqlite3.Connection, path: Path) -> None:
+    """Apply sources/gloss_corrections.csv: our corrections to glosses from the sources.
+
+    Columns: lex_id, gloss_language, stem, gloss, note. Each correction replaces
+    the gloss from the source; a lexeme that is not in the database is an error.
+    """
+    if not path.exists():
+        return
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    for r in rows:
+        lex_id = unicodedata.normalize("NFC", r["lex_id"].strip())
+        if not con.execute("SELECT 1 FROM lexemes WHERE lex_id = ?", (lex_id,)).fetchone():
+            if lex_id.startswith("grc:") and not con.execute(
+                    "SELECT 1 FROM lexemes WHERE corpus = 'n1904'").fetchone():
+                continue                     # Greek NT not built (--no-n1904)
+            sys.exit(f"{path.name}: unknown lexeme {lex_id!r}")
+        con.execute("INSERT OR REPLACE INTO glosses VALUES (?,?,?,?)",
+                    (lex_id, r["gloss_language"].strip(), r["stem"].strip() or "default",
+                     r["gloss"].strip()))
+    print(f"gloss corrections: {len(rows)} from {path.name}")
+
+
 # --- plans and finishing -------------------------------------------------------------
 
 def build_plans(con: sqlite3.Connection) -> None:
@@ -520,6 +543,8 @@ def main(argv=None) -> None:
     ap.add_argument("--no-n1904", action="store_true", help="leave out the Greek New Testament")
     ap.add_argument("--bibleol", type=Path, default=here / "sources" / "bibleol",
                     help="folder with Bible Online Learner's greek_<lang>.csv gloss files")
+    ap.add_argument("--corrections", type=Path, default=here / "sources" / "gloss_corrections.csv",
+                    help="our corrections to glosses from the sources")
     ap.add_argument("--out", type=Path, default=here / "data" / "bhsa_vocab.sqlite")
     ap.add_argument("--glosses", type=Path, nargs="*",
                     default=sorted(here.parent.glob("*_glosses.csv")),
@@ -546,6 +571,7 @@ def main(argv=None) -> None:
         add_n1904(con, n1904, args.bibleol)
         corpora["n1904"] = args.n1904_version
 
+    apply_corrections(con, args.corrections)
     build_plans(con)
     meta = {
         "schema_version": str(SCHEMA_VERSION),

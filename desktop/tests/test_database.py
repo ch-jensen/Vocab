@@ -156,3 +156,14 @@ def test_danish_glosses_imported(con):
     if "Danish" not in langs:
         pytest.skip("Danish_glosses.csv not imported")
     assert one(con, "SELECT gloss FROM glosses WHERE lex_id='hbo:>B/' AND gloss_language='Danish'") == "far"
+
+
+def test_gloss_corrections_applied(con):
+    """Our corrections (sources/gloss_corrections.csv) replace the source's glosses."""
+    assert one(con, "SELECT gloss FROM glosses WHERE lex_id = 'grc:ἀγαπάω' AND gloss_language = 'Danish'") \
+        == "elsker"
+    assert one(con, "SELECT gloss FROM glosses WHERE lex_id = 'grc:ὁ' AND gloss_language = 'Danish'") \
+        == "den, det, de"
+    # Other languages are untouched.
+    assert one(con, "SELECT gloss FROM glosses WHERE lex_id = 'grc:ἀγαπάω' AND gloss_language = 'English'") \
+        == "love"
