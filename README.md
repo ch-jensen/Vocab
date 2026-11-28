@@ -132,7 +132,7 @@ appropriate credit, including to the BHSA:
 
 > Greek New Testament: Nestle 1904, Text-Fabric edition N1904 by the Center of Biblical Languages
 > and Computing and the ETCBC (MIT), based on MACULA Greek by Clear Bible (CC BY 4.0). Greek
-> glosses: Bible Online Learner, Ezer IT Consulting, used with permission.
+> glosses: Bible Online Learner, Ezer IT Consulting.
 
 > Data: BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis), version 2021, by the Eep Talstra
 > Centre for Bible and Computer (ETCBC), Vrije Universiteit Amsterdam, licensed under CC BY-NC 4.0.
