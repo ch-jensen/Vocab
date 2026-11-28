@@ -25,7 +25,7 @@ def corpus_pill(corpus: str) -> QLabel:
     pill = QLabel(decks.CORPUS_LABELS.get(corpus, corpus))
     pill.setObjectName("pill")
     pill.setStyleSheet(f"QLabel#pill {{ background: {bg}; color: {fg}; border-radius: 9px; "
-                       "padding: 1px 9px; font-size: 9.5pt; }}")
+                       "padding: 1px 9px; font-size: 9.5pt; }")
     pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
     return pill
 

@@ -37,6 +37,8 @@ def test_home_lists_decks(app, store):
     card = win.home.cards[0]
     assert card.name.text() == "Frequency" and card.language == "Hebrew"
     assert card.pill.text() == "Hebrew Bible" and "Hebrew" in card.pill.toolTip()
+    sheet = card.pill.styleSheet()                       # balanced braces: Qt can parse it
+    assert sheet.count("{") == sheet.count("}") == 1
     assert card.figures["new"].text() == "10"
 
 
