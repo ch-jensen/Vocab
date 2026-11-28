@@ -44,7 +44,20 @@ class CountsBar(QWidget):
                 layout.addWidget(QLabel("·"))
             layout.addWidget(label)
 
-    def set_counts(self, c: Counts) -> None:
+    def set_counts(self, c: Counts, current: str | None = None) -> None:
+        """Show the counts; `current` ('new', 'learning' or 'due') is underlined, as in Anki,
+        to show which group the word on screen comes from."""
         self.new.setText(f"{c.new} new")
         self.learning.setText(f"{learning_text(c)} learning")
         self.due.setText(f"{c.review} due")
+        for group, label in (("new", self.new), ("learning", self.learning), ("due", self.due)):
+            font = label.font()
+            font.setUnderline(group == current)
+            label.setFont(font)
+
+    def current(self) -> str | None:
+        """The underlined group, if any."""
+        for group, label in (("new", self.new), ("learning", self.learning), ("due", self.due)):
+            if label.font().underline():
+                return group
+        return None

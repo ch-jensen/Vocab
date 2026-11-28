@@ -483,3 +483,22 @@ def test_coverage_matches_word_by_word_count(store):
     assert stats.coverage(store) == pytest.approx(known / total)
     books = stats.coverage_by_book(store)
     assert sum(b.known for b in books) == known and sum(b.words for b in books) == total
+
+
+def test_item_group(store, clock):
+    """Each word says which count it comes from: new, learning or due."""
+    s = session(store, DeckConfig(plan_id="hebrew-frequency", new_per_day=2), clock)
+    item = s.next_item()
+    assert item.group == "new"
+    s.rate(item, Rating.Again)                  # learning step, due in 1 minute
+    clock.advance(minutes=1)
+    item = s.next_item()
+    assert item.group == "new"                  # the second new word comes first (not the same lexeme)
+    s.rate(item, Rating.Easy)
+    item = s.next_item()
+    assert item.group == "learning"
+    s.rate(item, Rating.Again)
+    clock.advance(days=1)                       # left in learning since yesterday -> due
+    s = session(store, None, clock)
+    item = s.next_item()
+    assert item.group == "due" and not item.is_new

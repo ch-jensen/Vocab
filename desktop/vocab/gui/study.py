@@ -189,12 +189,13 @@ class StudyPage(QWidget):
         self.deck_label.setText(deck.name)
         self.next_card()
 
-    def _set_counts(self) -> None:
-        self.counts.set_counts(self.session.counts())
+    def _set_counts(self, current: str | None = None) -> None:
+        self.counts.set_counts(self.session.counts(), current)
 
     def next_card(self) -> None:
-        self._set_counts()
         self.item = self.session.next_item()
+        # Underline the group the word comes from (none on the "finished" screen).
+        self._set_counts(self.item.group if self.item else None)
         self.answered = False
         self.feedback.clear()
         self.facts.clear()

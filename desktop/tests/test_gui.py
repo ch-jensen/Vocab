@@ -357,3 +357,22 @@ def test_about_window(app):
     assert "Again" in text[1] and "your usual time" in text[1] and "21 days" in text[1]
     assert "Christian Canu Højgaard" in text[2] and "CC BY-NC 4.0" in text[2]
     assert "ETCBC" in text[2]
+
+
+def test_current_group_underlined(app, store):
+    from fsrs import Rating
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "U", DeckConfig(plan_id="hebrew-frequency",
+                                                    answer_mode="self", new_per_day=1))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    assert page.counts.current() == "new"
+    assert page.counts.new.font().underline() and not page.counts.due.font().underline()
+    page._enter()
+    page.rate(Rating.Again)                     # nothing else due: finished for now
+    assert page.item is None and page.counts.current() is None
+    from datetime import datetime, timedelta, timezone
+    page.session.clock = lambda: datetime.now(timezone.utc) + timedelta(minutes=2)
+    page.next_card()
+    assert page.item is not None and page.counts.current() == "learning"
