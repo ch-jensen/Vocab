@@ -70,7 +70,7 @@ key is read but nothing writes it yet) and statistics.
 | Module | Purpose |
 |---|---|
 | `app.py` | The main window, menus (import old score files, About with the BHSA credit) and the entry point |
-| `home.py` | The deck list with today's new / learning / due counts; buttons to create, edit, delete and study decks |
+| `home.py` | The front page: a bar with streak, words learned, reviews and a 7-day chart (`ProgressBarStrip`), and a card per deck (`DeckCard`) with a corpus label, progress, today's new / learning / due counts, *Study* (disabled when there is nothing to study) and a ⋯ menu to edit, export or delete; a dashed *New deck…* card (`NewDeckCard`) and *Import deck…* next to the title. Arrow keys move the selection, Enter studies |
 | `study.py` | The study screen: the clause in large pointed Hebrew with the word highlighted, then the answer (typed, or Anki-style with the four rating buttons and their intervals), the gloss, the dictionary form and facts about the word |
 | `deck_editor.py` | Creating and editing decks: a plan or your own selection (language, part of speech, frequency rank), forms (stem, tense, suffix, books and chapters) and study settings, with a live word count |
 
@@ -94,10 +94,10 @@ installer build (Phase 5), a python.org Python is the safer choice.
 
 | Module | Purpose |
 |---|---|
-| `stats.py` / `gui/stats_page.py` | The **Statistics** screen (button on the deck list): words learned, in learning, reviews today, share remembered over the last 30 days, study streak; **how much of the text you know**, overall and per book; progress per deck; reviews per day over the last 30 days and words due over the next 30 days |
+| `stats.py` / `gui/stats_page.py` | The **Statistics** screen (*Statistics ›* on the front page): a card per corpus (`CorpusCard`) and overall reviews over the last 30 days and words due over the next 30; *Details* opens `CorpusStatsPage` for one corpus: words learned, in learning, retention, **how much of the text you know**, overall and per book, progress per deck and charts. *Personal scheduling* (`SchedulingSection`) is at the bottom. The functions in `stats.py` take `corpus=` (`None` = all) |
 | `optimize.py` | **Fit to my answers**: fits the FSRS parameters to your own review history with fsrs-rs, the Rust implementation Anki uses, via `fsrs-rs-python` (0.4 MB, no PyTorch). Needs 400 reviews, and the fitted parameters are only kept if they predict your answers better than the current ones. Words imported from the notebook version are left out of the fitting |
 | `glosses.py` / `gui/gloss_dialog.py` | **Edit gloss…** on the study screen, after the answer: your own glosses (general and per stem) override the built-in ones; leave a field empty to go back to the built-in gloss. **File → Import gloss file…** adds a `<Language>_glosses.csv` (the notebook layout), so a new gloss language needs no rebuild; **File → Export glosses…** writes all glosses in a language, yours included, in the same layout |
-| `gui/charts.py` | A small column chart drawn with QPainter, with the exact value on hover |
+| `gui/charts.py` | A small column chart drawn with QPainter, with the exact value on hover; `WeekBars`, the 7-day chart on the front page |
 
 A word counts as *learned* once it has graduated from learning. "How much of the text you know"
 counts word occurrences in the Bible whose word is learned.
@@ -162,8 +162,8 @@ marked in red and explained. A deck can combine passages from several books
 (`DeckConfig.passages` holds one `Passage` per chapter range; `parse_chapters` and
 `format_chapters` in `decks.py` convert to and from the text form).
 
-**Exporting and importing decks** (`deckfile.py`). *Export…* / *Import…* on the deck list (also in the
-File menu) save and load a deck as a `.vocabdeck` file: JSON with the deck's settings, the BHSA
+**Exporting and importing decks** (`deckfile.py`). *Export…* in a deck card's ⋯ menu and *Import deck…* on the
+front page (both also in the File menu) save and load a deck as a `.vocabdeck` file: JSON with the deck's settings, the BHSA
 version, and the user's own glosses for the deck's words in its gloss language. Learning progress is
 not included. On import, the user's own glosses are never overwritten, a name already in use gets a
 number, and files from a newer app version, unknown plans or unknown books are refused with a
@@ -201,3 +201,32 @@ Settings → Privacy & Security → *Open Anyway*). Notarization needs an Apple 
 
 **Not yet tested on a real Mac.** The workflow builds, tests and self-tests the app on Apple's
 runners, but the app hasn't been opened by hand on a Mac yet.
+
+# Greek New Testament
+
+The database (schema 2) holds two corpora, built by `build_db.py`:
+
+| Corpus | Source | Licence |
+|---|---|---|
+| `bhsa` | BHSA 2021 (ETCBC), Hebrew and Aramaic | CC BY-NC 4.0 |
+| `n1904` | Nestle 1904 Greek NT, Text-Fabric edition [N1904](https://github.com/CenterBLC/N1904) 1.0.0 (CBLC/ETCBC), based on [MACULA Greek](https://github.com/Clear-Bible/macula-greek) | MIT; MACULA CC BY 4.0 |
+
+* **Glosses** for Greek come from [Bible Online Learner](https://github.com/EzerIT/BibleOL)
+  (Ezer IT Consulting), used with permission. The files are kept unchanged in `sources/bibleol/`
+  (commit in `SOURCE.txt`) and linked to N1904 by Strong's number, preferring the entry whose lexeme
+  is the lemma: every Greek lemma gets a gloss in Danish, English and Dutch, nearly all in Portuguese
+  and Swahili, and the frequent ones in Spanish (Amharic is empty in the source and left out).
+* **Corrections** to glosses from the sources go in `sources/gloss_corrections.csv` (with a note
+  why), applied after the sources.
+* **Numbering:** Greek words, verses and sentences get node ids from 10,000,000 and books
+  `book_order` from 101, so the two corpora never collide and every book is still one contiguous
+  range of words. Lexemes are `grc:<lemma>` (NFC).
+* **Context:** each Greek word records the range of words shown with it (`ctx_from`, `ctx_to`): the
+  smallest clause with 4–30 words, otherwise the sentence or a 30-word window of it.
+* **Statistics** are per corpus: a card each on the statistics page, with coverage per book on
+  its *Details* page. Deck cards show the corpus as a label (`CORPUS_LABELS` in `decks.py`).
+* **Decks** have a `corpus` (`bhsa` or `n1904`). Greek decks filter by tense, voice and mood (verbs
+  only); Hebrew decks by stem, tense and suffix. Proper nouns get `sp = 'nmpr'` as in the BHSA.
+
+To rebuild, Text-Fabric needs N1904 once: `from tf.app import use; use('CenterBLC/N1904')`.
+`python build_db.py --no-n1904` builds the Hebrew Bible only.

@@ -1,0 +1,1 @@
+﻿Greek NT glosses from Bible Online Learner (Ezer IT Consulting, Claus Toendering), https://github.com/EzerIT/BibleOL, lexicons/greek_*.csv at commit b6dc9538885858c7e2bf6f9608e770e2dc97a29e. Used with permission.

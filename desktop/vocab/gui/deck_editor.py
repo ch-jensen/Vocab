@@ -10,10 +10,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComb
                                QVBoxLayout, QWidget)
 
 from .. import decks
-from ..decks import (Deck, DeckConfig, Passage, format_chapters, parse_chapters,
-                     passages_by_book)
+from ..decks import (CORPORA, CORPUS_LANGUAGES, Deck, DeckConfig, Passage, format_chapters,
+                     parse_chapters, passages_by_book)
 from ..store import Store
-from .common import POS_LABELS, TENSE_LABELS, stem_label
+from .common import GREEK_LABELS, POS_LABELS, TENSE_LABELS, stem_label
 
 MAX_RANK = 9999
 
@@ -187,18 +187,77 @@ class _CountTask(QRunnable):
 
 
 class DeckEditor(QDialog):
+    """Create or edit a deck. The text (corpus) is chosen first; the tabs then
+    offer what fits it: Hebrew stems and suffixes, or Greek voice and mood."""
+
     def __init__(self, store: Store, deck: Deck | None, parent=None):
         super().__init__(parent)
         self.store = store
         self.deck = deck
         cfg = deck.config if deck else DeckConfig(plan_id="hebrew-frequency")
         self.setWindowTitle("Edit deck" if deck else "New deck")
-        self.resize(620, 640)
+        self.resize(640, 680)
 
         self.name = QLineEdit(deck.name if deck else "")
         self.name.setPlaceholderText("e.g. Hebrew by frequency")
+        self.corpus = QComboBox()
+        for corpus, label in CORPORA.items():
+            if store.books(corpus):                    # only corpora in the database
+                self.corpus.addItem(label, corpus)
+        self.corpus.setCurrentIndex(max(self.corpus.findData(cfg.corpus), 0))
+        if deck is not None:
+            # Changing the text of an existing deck would change all its words.
+            self.corpus.setEnabled(False)
+            self.corpus.setToolTip("The text of an existing deck cannot be changed; "
+                                   "make a new deck instead.")
+        self.corpus.currentIndexChanged.connect(self._corpus_changed)
 
-        # --- Words tab -----------------------------------------------------
+        self.count = QLabel()
+        self.count.setObjectName("muted")
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.save)
+        buttons.rejected.connect(self.reject)
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.count)
+        bottom.addStretch()
+        bottom.addWidget(buttons)
+
+        form = QFormLayout()
+        form.addRow("Name", self.name)
+        form.addRow("Text", self.corpus)
+        self.layout_ = QVBoxLayout(self)
+        self.layout_.addLayout(form)
+        self.tabs = QTabWidget()
+        self.layout_.addWidget(self.tabs, 1)
+        self.layout_.addLayout(bottom)
+
+        # Live count of words in the deck.
+        self._generation = 0
+        self._count_signals = _CountSignals()
+        self._count_signals.done.connect(self._count_done)
+        self._timer = QTimer(self, singleShot=True, interval=300)
+        self._timer.timeout.connect(self.update_count)
+        self._build(cfg)
+
+    # --- building the tabs for a corpus ------------------------------------------
+    def _corpus_changed(self) -> None:
+        corpus = self.corpus.currentData()
+        plan = next((p["plan_id"] for p in decks.plans(self.store) if p["corpus"] == corpus), None)
+        gloss = self.gloss.currentText()
+        cfg = DeckConfig(corpus=corpus, plan_id=plan, languages=CORPUS_LANGUAGES[corpus],
+                         gloss_language=gloss if gloss in self.store.gloss_languages(corpus) else "English",
+                         new_per_day=self.new_per_day.value(),
+                         max_reviews_per_day=self.max_reviews.value(),
+                         desired_retention=round(self.retention.value(), 2),
+                         answer_mode=self.mode.currentData(), show_lexeme=self.show_lex.isChecked())
+        self._build(cfg)
+
+    def _build(self, cfg: DeckConfig) -> None:
+        store = self.store
+        self.corpus_id = cfg.corpus
+        greek = cfg.corpus == "n1904"
+
+        # --- Words tab ---
         self.plan_radio = QRadioButton("A predefined plan, from the most to the least frequent word")
         self.custom_radio = QRadioButton("My own selection")
         group = QButtonGroup(self)
@@ -206,7 +265,8 @@ class DeckEditor(QDialog):
         group.addButton(self.custom_radio)
         self.plan = QComboBox()
         for p in decks.plans(store):
-            self.plan.addItem(f"{p['name']} ({p['size']} words)", p["plan_id"])
+            if p["corpus"] == cfg.corpus:
+                self.plan.addItem(f"{p['name']} ({p['size']} words)", p["plan_id"])
         if cfg.plan_id:
             self.plan.setCurrentIndex(max(self.plan.findData(cfg.plan_id), 0))
         (self.plan_radio if cfg.plan_id else self.custom_radio).setChecked(True)
@@ -220,11 +280,14 @@ class DeckEditor(QDialog):
         lang_row.addWidget(self.aramaic)
         lang_row.addStretch()
 
-        self.pos = checklist(list(POS_LABELS.items()), set(cfg.pos) if cfg.pos is not None else None)
+        pos_here = {r[0] for r in store.con.execute(
+            "SELECT DISTINCT sp FROM bhsa.lexemes WHERE corpus = ?", (cfg.corpus,))}
+        self.pos = checklist([(k, v) for k, v in POS_LABELS.items() if k in pos_here],
+                             set(cfg.pos) if cfg.pos is not None else None)
         self.rank_min = QSpinBox()
         self.rank_max = QSpinBox()
-        for s in (self.rank_min, self.rank_max):
-            s.setRange(1, MAX_RANK)
+        for sb in (self.rank_min, self.rank_max):
+            sb.setRange(1, MAX_RANK)
         self.rank_min.setValue((cfg.rank_min or 0) + 1)
         self.rank_max.setValue(cfg.rank_max + 1 if cfg.rank_max is not None else MAX_RANK)
         rank_row = QHBoxLayout()
@@ -237,7 +300,8 @@ class DeckEditor(QDialog):
 
         self.custom_box = QGroupBox()
         cf = QFormLayout(self.custom_box)
-        cf.addRow("Language", lang_row)
+        if not greek:
+            cf.addRow("Language", lang_row)
         cf.addRow("Part of speech", with_buttons(self.pos))
         cf.addRow("Frequency rank", rank_row)
 
@@ -250,37 +314,55 @@ class DeckEditor(QDialog):
         wl.addWidget(self.custom_box)
         wl.addStretch()
 
-        # --- Forms tab -----------------------------------------------------
-        stems = [(s, f"{stem_label(s)} ({lang[:3]}., {n})") for s, lang, n in store.stems()]
-        self.stems = checklist(stems, set(cfg.stems) if cfg.stems is not None else None)
-        self.tenses = checklist(list(TENSE_LABELS.items()),
-                                set(cfg.tenses) if cfg.tenses is not None else None, 120)
+        # --- Forms tab ---
+        def values(column, chosen):
+            items = [(v, f"{GREEK_LABELS.get(v, v)} ({n})") for v, n in store.corpus_values(cfg.corpus, column)]
+            return checklist(items, set(chosen) if chosen is not None else None, 120)
+
+        if greek:
+            self.stems = checklist([], None)
+            self.tenses = values("tense", cfg.tenses)
+            self.voices = values("voice", cfg.voices)
+            self.moods = values("mood", cfg.moods)
+        else:
+            stems = [(st, f"{stem_label(st)} ({lang[:3]}., {n})") for st, lang, n in store.stems()]
+            self.stems = checklist(stems, set(cfg.stems) if cfg.stems is not None else None)
+            self.tenses = checklist(list(TENSE_LABELS.items()),
+                                    set(cfg.tenses) if cfg.tenses is not None else None, 120)
+            self.voices = checklist([], None)
+            self.moods = checklist([], None)
         self.suffix = QComboBox()
         for value, label in (("any", "with or without"), ("with", "only with a suffix"),
                              ("without", "only without a suffix")):
             self.suffix.addItem(label, value)
         self.suffix.setCurrentIndex(self.suffix.findData(cfg.suffix))
-        self.books = BookChapters(store.books(), cfg.passages)
+        self.books = BookChapters(store.books(cfg.corpus), cfg.passages)
 
         forms = QWidget()
         ff = QFormLayout(forms)
-        note = QLabel("Choose which attested forms you will be shown. Stem and tense only "
-                      "apply to verbs. A word is in the deck if at least one of its forms is.")
+        note = QLabel("Choose which attested forms you will be shown. "
+                      + ("Tense, voice and mood" if greek else "Stem and tense")
+                      + " only apply to verbs. A word is in the deck if at least one of its forms is.")
         note.setWordWrap(True)
         note.setObjectName("muted")
         ff.addRow(note)
-        ff.addRow("Verbal stem", with_buttons(self.stems))
-        ff.addRow("Tense", with_buttons(self.tenses))
-        ff.addRow("Pronominal suffix", self.suffix)
+        if greek:
+            ff.addRow("Tense", with_buttons(self.tenses))
+            ff.addRow("Voice", with_buttons(self.voices))
+            ff.addRow("Mood", with_buttons(self.moods))
+        else:
+            ff.addRow("Verbal stem", with_buttons(self.stems))
+            ff.addRow("Tense", with_buttons(self.tenses))
+            ff.addRow("Pronominal suffix", self.suffix)
         ff.addRow("Books and\nchapters", self.books)
 
-        # --- Study tab -----------------------------------------------------
+        # --- Study tab ---
         self.gloss = QComboBox()
-        for lang in store.gloss_languages():
+        for lang in store.gloss_languages(cfg.corpus):
             self.gloss.addItem(lang)
         self.gloss.setCurrentText(cfg.gloss_language)
         self.split = QCheckBox("Learn each verbal stem as a separate word (e.g. qal and piel)")
-        self.split.setChecked(cfg.split_stems)
+        self.split.setChecked(cfg.split_stems and not greek)
         self.mode = QComboBox()
         self.mode.addItem("Type the gloss", "typed")
         self.mode.addItem("Show the answer and rate yourself (like Anki)", "self")
@@ -301,7 +383,8 @@ class DeckEditor(QDialog):
         study = QWidget()
         sf = QFormLayout(study)
         sf.addRow("Gloss language", self.gloss)
-        sf.addRow("", self.split)
+        if not greek:
+            sf.addRow("", self.split)
         sf.addRow("Answer", self.mode)
         sf.addRow("", self.show_lex)
         sf.addRow("New words per day", self.new_per_day)
@@ -317,37 +400,18 @@ class DeckEditor(QDialog):
         tabs.addTab(words, "Words")
         tabs.addTab(forms, "Forms")
         tabs.addTab(study, "Study")
+        self.layout_.replaceWidget(self.tabs, tabs)
+        self.tabs.setParent(None)
+        self.tabs.deleteLater()
+        self.tabs = tabs
 
-        self.count = QLabel()
-        self.count.setObjectName("muted")
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.save)
-        buttons.rejected.connect(self.reject)
-        bottom = QHBoxLayout()
-        bottom.addWidget(self.count)
-        bottom.addStretch()
-        bottom.addWidget(buttons)
-
-        form = QFormLayout()
-        form.addRow("Name", self.name)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(tabs, 1)
-        layout.addLayout(bottom)
-
-        # Live count of words in the deck.
-        self._generation = 0
-        self._count_signals = _CountSignals()
-        self._count_signals.done.connect(self._count_done)
-        self._timer = QTimer(self, singleShot=True, interval=300)
-        self._timer.timeout.connect(self.update_count)
         for signal in (self.plan_radio.toggled, self.plan.currentIndexChanged,
                        self.hebrew.toggled, self.aramaic.toggled, self.rank_min.valueChanged,
                        self.rank_max.valueChanged, self.suffix.currentIndexChanged,
                        self.books.changed,
                        self.gloss.currentIndexChanged, self.split.toggled):
             signal.connect(self._changed)
-        for lw in (self.pos, self.stems, self.tenses):
+        for lw in (self.pos, self.stems, self.tenses, self.voices, self.moods):
             lw.itemChanged.connect(self._changed)
         self._changed()
 
@@ -357,23 +421,31 @@ class DeckEditor(QDialog):
         self._timer.start()
 
     def config(self) -> DeckConfig:
+        corpus = self.corpus_id
+        greek = corpus == "n1904"
         plan_id = self.plan.currentData() if self.plan_radio.isChecked() else None
         if plan_id:
-            languages, pos, rank_min, rank_max = ["Hebrew", "Aramaic"], None, None, None
+            languages, pos, rank_min, rank_max = list(CORPUS_LANGUAGES[corpus]), None, None, None
         else:
-            languages = [l for l, cb in (("Hebrew", self.hebrew), ("Aramaic", self.aramaic))
-                         if cb.isChecked()]
+            languages = (["Greek"] if greek else
+                         [l for l, cb in (("Hebrew", self.hebrew), ("Aramaic", self.aramaic))
+                          if cb.isChecked()])
             pos = checked_values(self.pos)
             rank_min = self.rank_min.value() - 1 if self.rank_min.value() > 1 else None
             rank_max = self.rank_max.value() - 1 if self.rank_max.value() < MAX_RANK else None
         passages = self.books.passages()       # raises ValueError for bad chapter input
         return DeckConfig(
-            plan_id=plan_id, languages=languages, pos=pos, rank_min=rank_min, rank_max=rank_max,
-            stems=checked_values(self.stems), tenses=checked_values(self.tenses),
-            suffix=self.suffix.currentData(), passages=passages,
+            plan_id=plan_id, corpus=corpus, languages=languages, pos=pos,
+            rank_min=rank_min, rank_max=rank_max,
+            stems=None if greek else checked_values(self.stems),
+            tenses=checked_values(self.tenses),
+            voices=checked_values(self.voices) if greek else None,
+            moods=checked_values(self.moods) if greek else None,
+            suffix="any" if greek else self.suffix.currentData(), passages=passages,
             include_lex=self.deck.config.include_lex if self.deck else [],
             exclude_lex=self.deck.config.exclude_lex if self.deck else [],
-            split_stems=self.split.isChecked(), gloss_language=self.gloss.currentText(),
+            split_stems=self.split.isChecked() and not greek,
+            gloss_language=self.gloss.currentText(),
             new_per_day=self.new_per_day.value(), max_reviews_per_day=self.max_reviews.value(),
             desired_retention=round(self.retention.value(), 2),
             answer_mode=self.mode.currentData(), show_lexeme=self.show_lex.isChecked(),

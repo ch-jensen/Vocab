@@ -129,3 +129,78 @@ class BarChart(QWidget):
         self.hover = None
         self.update()
         QToolTip.hideText()
+
+
+class WeekBars(QWidget):
+    """A small column chart of the last 7 days: one bar per day with the weekday's
+    initial below it, today's initial in bold, and the exact number on hover."""
+
+    BAR = 14          # column width (px)
+    STEP = 22         # distance between columns
+    PLOT_H = 30       # height of the tallest column
+    LABEL_H = 14
+
+    def __init__(self, unit: str = "reviews", parent=None):
+        super().__init__(parent)
+        self.unit = unit
+        self.data: list[tuple[date, int]] = []
+        self.hover: int | None = None
+        self.setMouseTracking(True)
+        self.setFixedSize(7 * self.STEP, self.PLOT_H + self.LABEL_H + 4)
+
+    def set_data(self, data: list[tuple[date, int]]) -> None:
+        self.data = data[-7:]
+        self.hover = None
+        self.update()
+
+    def _x(self, i: int) -> float:
+        return i * self.STEP + (self.STEP - self.BAR) / 2
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        base = self.PLOT_H + 1
+        top = max((n for _, n in self.data), default=0) or 1
+        p.setPen(QPen(AXIS, 1))
+        p.drawLine(QPointF(0, base + 0.5), QPointF(self.width(), base + 0.5))
+        font = p.font()
+        font.setPointSizeF(font.pointSizeF() * 0.8)
+        for i, (day, n) in enumerate(self.data):
+            x = self._x(i)
+            if n > 0:
+                h = max(self.PLOT_H * n / top, 3)
+                y = base - h
+                r = min(RADIUS, self.BAR / 2, h)
+                path = QPainterPath()
+                path.moveTo(x, base)
+                path.lineTo(x, y + r)
+                path.quadTo(x, y, x + r, y)
+                path.lineTo(x + self.BAR - r, y)
+                path.quadTo(x + self.BAR, y, x + self.BAR, y + r)
+                path.lineTo(x + self.BAR, base)
+                path.closeSubpath()
+                p.fillPath(path, SERIES_HOVER if i == self.hover else SERIES)
+            font.setBold(i == len(self.data) - 1)          # today
+            p.setFont(font)
+            p.setPen(TEXT_MUTED)
+            p.drawText(QRectF(i * self.STEP, base + 3, self.STEP, self.LABEL_H), Qt.AlignHCenter,
+                       day.strftime("%a")[0])
+        p.end()
+
+    def mouseMoveEvent(self, event) -> None:
+        i = int(event.position().x() // self.STEP)
+        i = i if 0 <= i < len(self.data) else None
+        if i != self.hover:
+            self.hover = i
+            self.update()
+        if i is None:
+            QToolTip.hideText()
+            return
+        day, n = self.data[i]
+        when = "today" if i == len(self.data) - 1 else f"{day.strftime('%a')} {day.day} {day.strftime('%b')}"
+        QToolTip.showText(event.globalPosition().toPoint(), f"{when}: {n} {self.unit}", self)
+
+    def leaveEvent(self, _event) -> None:
+        self.hover = None
+        self.update()
+        QToolTip.hideText()

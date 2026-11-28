@@ -479,9 +479,10 @@ def test_coverage_matches_word_by_word_count(store):
     known = store.con.execute("""SELECT COUNT(*) FROM bhsa.words w WHERE EXISTS (
         SELECT 1 FROM cards c WHERE c.lex_id = w.lex_id AND c.state = 2
         AND (c.stem = '*' OR c.stem = w.stem))""").fetchone()[0]
-    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words").fetchone()[0]
+    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words w JOIN bhsa.lexemes l USING (lex_id) "
+                              "WHERE l.corpus = 'bhsa'").fetchone()[0]
     assert stats.coverage(store) == pytest.approx(known / total)
-    books = stats.coverage_by_book(store)
+    books = stats.coverage_by_book(store, corpus="bhsa")
     assert sum(b.known for b in books) == known and sum(b.words for b in books) == total
 
 
@@ -502,3 +503,73 @@ def test_item_group(store, clock):
     s = session(store, None, clock)
     item = s.next_item()
     assert item.group == "due" and not item.is_new
+
+
+# --- Greek New Testament ------------------------------------------------------------
+
+def test_greek_plan_and_filters(store):
+    keys = decks.deck_cards(store.con, DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                  languages=["Greek"]))
+    assert len(keys) == 5396 and keys[0] == CardKey("grc:ὁ", "*") and keys[1].lex_id == "grc:καί"
+    # Hebrew decks never contain Greek words and vice versa.
+    assert all(k.lex_id.startswith("grc:") for k in keys)
+    hebrew = decks.deck_cards(store.con, DeckConfig(plan_id="hebrew-frequency"))
+    assert not any(k.lex_id.startswith("grc:") for k in hebrew)
+    # Only verbs with aorist passive forms (filters apply to verbs only).
+    cfg = DeckConfig(corpus="n1904", pos=["verb"], tenses=["aorist"], voices=["passive"])
+    verbs = decks.deck_cards(store.con, cfg)
+    assert 100 < len(verbs) < 1000
+    for node, _ in decks.occurrences(store.con, cfg, verbs[0]):
+        w = store.word(node)
+        assert (w["tense"], w["voice"]) == ("aorist", "passive")
+    subj = decks.deck_cards(store.con, DeckConfig(corpus="n1904", pos=["verb"], moods=["optative"]))
+    assert 0 < len(subj) < 60
+
+
+def test_greek_book_and_chapters(store):
+    cfg = DeckConfig(corpus="n1904", passages=[Passage("John", 1, 1)])
+    keys = decks.deck_cards(store.con, cfg)
+    assert CardKey("grc:λόγος", "*") in keys and 50 < len(keys) < 200
+    for node, _ in decks.occurrences(store.con, cfg, CardKey("grc:λόγος", "*")):
+        assert store.reference(store.word(node)["verse_id"]).startswith("John 1:")
+
+
+def test_greek_study_item(store, clock):
+    s = session(store, DeckConfig(corpus="n1904", plan_id="greek-frequency", languages=["Greek"],
+                                  gloss_language="Danish", new_per_day=3), clock)
+    item = s.next_item()
+    assert item.key.lex_id == "grc:ὁ" and item.language == "Greek" and not item.rtl
+    assert item.gloss == "den, det, de"                       # corrected Danish gloss
+    assert item.node in [w.node for w in item.clause] and 1 <= len(item.clause) <= 31
+    verbs = session(store, DeckConfig(corpus="n1904", pos=["verb"], new_per_day=1), clock, "verbs")
+    verb = verbs.next_item()
+    assert verb.key.lex_id == "grc:εἰμί" and verb.sp == "verb"
+    assert verb.mood != "NA" and verb.tense != "NA"
+    assert store.glosses(verb.key.lex_id, "Danish")["default"] == "er"
+
+
+def test_greek_gloss_languages(store):
+    langs = store.gloss_languages("n1904")
+    assert {"Danish", "English", "Dutch", "Portuguese", "Swahili", "Spanish"} <= set(langs)
+    assert "Danish" in store.gloss_languages("bhsa") and "Swahili" not in store.gloss_languages("bhsa")
+
+
+def test_greek_coverage_separate(store):
+    from vocab import stats
+    store.con.execute("INSERT INTO cards (lex_id, stem, state, due, created_at) VALUES "
+                      "('grc:καί', '*', 2, '2030-01-01T04:00:00.000+00:00', '2026-01-01T00:00:00.000+00:00')")
+    store.con.commit()
+    assert 0.06 < stats.coverage(store, "n1904") < 0.07        # καί: 8,978 of 137,779 words
+    assert stats.coverage(store, "bhsa") == 0
+    assert stats.corpora_with_progress(store) == ["n1904"]
+
+
+def test_language_label(store):
+    label = lambda **kw: decks.language_label(store.con, DeckConfig(**kw))
+    assert label(plan_id="hebrew-frequency", languages=["Hebrew", "Aramaic"]) == "Hebrew"
+    assert label(plan_id="aramaic-frequency", languages=["Hebrew", "Aramaic"]) == "Aramaic"
+    assert label() == "Hebrew"
+    assert label(languages=["Hebrew", "Aramaic"]) == "Hebrew and Aramaic"
+    assert label(languages=["Aramaic"]) == "Aramaic"
+    assert label(corpus="n1904", plan_id="greek-frequency", languages=["Greek"]) == "Greek"
+    assert label(corpus="n1904", languages=["Greek"]) == "Greek"

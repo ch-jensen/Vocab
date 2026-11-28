@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 
 USER_SCHEMA_VERSION = 1
-BHSA_SCHEMA_VERSION = "1"
+BHSA_SCHEMA_VERSION = "2"     # corpora database (build_db.py); "bhsa" is its schema name
 
 # In a PyInstaller build, bundled data files live under sys._MEIPASS.
 APP_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -196,6 +196,14 @@ class Store:
     def word(self, node: int) -> sqlite3.Row:
         return self.con.execute("SELECT * FROM bhsa.words WHERE node = ?", (node,)).fetchone()
 
+    def context_words(self, word: sqlite3.Row) -> list[sqlite3.Row]:
+        """The words shown with a word: its clause (Hebrew) or its context range (Greek)."""
+        if word["ctx_from"] is not None:
+            return self.con.execute(
+                "SELECT node, form_utf8, trailer_utf8, qere_utf8 FROM bhsa.words "
+                "WHERE node BETWEEN ? AND ? ORDER BY node", (word["ctx_from"], word["ctx_to"])).fetchall()
+        return self.clause_words(word["clause_id"])
+
     def clause_words(self, clause_id: int) -> list[sqlite3.Row]:
         return self.con.execute(
             "SELECT node, form_utf8, trailer_utf8, qere_utf8 FROM bhsa.words "
@@ -220,11 +228,20 @@ class Store:
             (lex_id, gloss_language))})
         return out
 
-    def books(self) -> list[tuple[str, str, int]]:
-        """(BHSA name, English name, number of chapters) in canonical order."""
+    def books(self, corpus: str | None = None) -> list[tuple[str, str, int]]:
+        """(name in the data, English name, number of chapters) in canonical order."""
+        where, params = ("WHERE corpus = ?", (corpus,)) if corpus else ("", ())
         return [(r[0], r[1].replace("_", " "), r[2]) for r in self.con.execute(
-            "SELECT book, book_en, MAX(chapter) FROM bhsa.verses "
-            "GROUP BY book_order ORDER BY book_order")]
+            f"SELECT book, book_en, MAX(chapter) FROM bhsa.verses {where} "
+            "GROUP BY book_order ORDER BY book_order", params)]
+
+    def corpus_values(self, corpus: str, column: str) -> list[tuple[str, int]]:
+        """Values of a word column (tense, voice, mood) for verbs in a corpus, most common first."""
+        assert column in ("tense", "voice", "mood")
+        return [(r[0], r[1]) for r in self.con.execute(
+            f"SELECT w.{column}, COUNT(*) FROM bhsa.words w JOIN bhsa.lexemes l ON l.lex_id = w.lex_id "
+            f"WHERE l.corpus = ? AND w.sp = 'verb' AND w.{column} <> 'NA' "
+            f"GROUP BY w.{column} ORDER BY COUNT(*) DESC", (corpus,))]
 
     def stems(self) -> list[tuple[str, str, int]]:
         """(stem, language, number of occurrences) for all verbal stems."""
@@ -233,7 +250,14 @@ class Store:
             "JOIN bhsa.lexemes l USING (lex_id) WHERE s.stem <> 'NA' "
             "GROUP BY s.stem, l.language ORDER BY l.language DESC, SUM(s.freq) DESC")]
 
-    def gloss_languages(self) -> list[str]:
+    def gloss_languages(self, corpus: str | None = None) -> list[str]:
+        """Gloss languages (built in or the user's own), of one corpus or of all."""
+        if corpus is None:
+            return [r[0] for r in self.con.execute(
+                "SELECT gloss_language FROM bhsa.glosses UNION SELECT gloss_language FROM user_glosses "
+                "ORDER BY 1")]
         return [r[0] for r in self.con.execute(
-            "SELECT gloss_language FROM bhsa.glosses UNION SELECT gloss_language FROM user_glosses "
-            "ORDER BY 1")]
+            "SELECT DISTINCT g.gloss_language FROM bhsa.glosses g JOIN bhsa.lexemes l USING (lex_id) "
+            "WHERE l.corpus = ? UNION SELECT DISTINCT u.gloss_language FROM user_glosses u "
+            "JOIN bhsa.lexemes l ON l.lex_id = u.lex_id WHERE l.corpus = ? ORDER BY 1",
+            (corpus, corpus))]

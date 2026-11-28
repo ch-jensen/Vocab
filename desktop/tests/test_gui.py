@@ -33,9 +33,13 @@ def test_home_lists_decks(app, store):
     from vocab.gui.app import MainWindow
     decks.create_deck(store, "Frequency", DeckConfig(plan_id="hebrew-frequency"))
     win = MainWindow(store)
-    assert win.home.table.rowCount() == 1
-    assert win.home.table.item(0, 0).text() == "Frequency"
-    assert win.home.table.item(0, 1).text() == "10"
+    assert len(win.home.cards) == 1
+    card = win.home.cards[0]
+    assert card.name.text() == "Frequency" and card.language == "Hebrew"
+    assert card.pill.text() == "Hebrew Bible" and "Hebrew" in card.pill.toolTip()
+    sheet = card.pill.styleSheet()                       # balanced braces: Qt can parse it
+    assert sheet.count("{") == sheet.count("}") == 1
+    assert card.figures["new"].text() == "10"
 
 
 def test_typed_study_flow(app, store):
@@ -222,8 +226,8 @@ def test_counts_bar_and_tooltips(app, store):
     assert bar.new.text() == "2 new"
     assert "later today" in bar.learning.toolTip() and bar.due.toolTip()
     win.show_home()
-    assert win.home.table.item(0, 2).text() == "0 (+1)"
-    assert win.home.table.horizontalHeaderItem(2).toolTip() == bar.learning.toolTip()
+    assert win.home.cards[0].figures["learning"].text() == "0 (+1)"
+    assert win.home.cards[0].figures["learning"].toolTip() == bar.learning.toolTip()
 
 
 def test_stats_page(app, store):
@@ -237,7 +241,8 @@ def test_stats_page(app, store):
     texts = " ".join(w.text() for w in win.stats.body.findChildren(type(win.study.feedback)))
     assert "0 mature words" in texts and "1 young words" in texts   # a new word just graduated
     assert "% " in texts or "%</span>" in texts           # coverage hero
-    assert not win.stats.fit_btn.isEnabled()                 # too few reviews to fit
+    assert not win.stats.scheduling.fit_btn.isEnabled()      # too few reviews to fit
+    assert "Default FSRS parameters" in win.stats.scheduling.fit_status.text()
 
 
 def test_gloss_dialog_from_study(app, store):
@@ -284,7 +289,7 @@ def test_export_and_import_deck_from_home(app, store, tmp_path, monkeypatch):
     assert path.exists() and "progress is not included" in shown[-1]
     result = win.home.import_deck_file(str(path))
     assert result.deck.name == "Jonah (2)"
-    assert win.home.table.rowCount() == 2
+    assert len(win.home.cards) == 2
     assert win.home.selected_deck().name == "Jonah (2)"
     bad = tmp_path / "bad.vocabdeck"
     bad.write_text("{}", encoding="utf-8")
@@ -378,21 +383,203 @@ def test_current_group_underlined(app, store):
     assert page.item is not None and page.counts.current() == "learning"
 
 
-def test_overview_tiles_on_deck_list(app, store):
+def test_streak_and_week_bar_on_deck_list(app, store):
+    from fsrs import Rating
+    from vocab.gui.app import MainWindow
+    from vocab.gui.home import ProgressBarStrip
+    deck = decks.create_deck(store, "O", DeckConfig(plan_id="hebrew-frequency", new_per_day=2))
+    win = MainWindow(store)
+    bar = win.home.overview
+    assert isinstance(bar, ProgressBarStrip)
+    assert "0 days" in bar.streak.text() and "Study streak" in bar.streak.text()
+    assert ">0</span>" in bar.learned.text() and "0 mature" in bar.learned.text()
+    assert ">0</span>" in bar.total.text()
+    assert len(bar.chart.data) == 7 and sum(n for _, n in bar.chart.data) == 0
+    win.start_study(deck)
+    win.study.session.rate(win.study.item, Rating.Easy)     # one review today
+    win.show_home()                                          # back on the deck list: refreshed
+    bar = win.home.overview
+    assert "1 day<" in bar.streak.text()
+    assert ">1</span>" in bar.learned.text() and ">1</span>" in bar.total.text()
+    assert bar.chart.data[-1][1] == 1 and ">1</span>" in bar.week_label.text()
+    assert len(win.home.findChildren(ProgressBarStrip)) == 1      # no duplicates
+    bar.stats_btn.click()                                     # Statistics › opens the statistics
+    assert win.pages.currentWidget() is win.stats
+
+
+def test_deck_editor_greek(app, store):
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.corpus.setCurrentIndex(dlg.corpus.findData("n1904"))
+    assert dlg.plan.currentData() == "greek-frequency"
+    assert dlg.voices.count() > 0 and dlg.moods.count() > 0 and dlg.stems.count() == 0
+    assert dlg.books._books[0][1] == "Matthew"
+    assert "Swahili" in [dlg.gloss.itemText(i) for i in range(dlg.gloss.count())]
+    dlg.gloss.setCurrentText("Danish")
+    dlg.name.setText("NT Greek")
+    cfg = dlg.config()
+    assert (cfg.corpus, cfg.plan_id, cfg.languages, cfg.gloss_language) == \
+        ("n1904", "greek-frequency", ["Greek"], "Danish")
+    dlg.save()
+    saved = decks.get_deck(store, "NT Greek")
+    again = DeckEditor(store, saved)
+    assert again.config() == saved.config and not again.corpus.isEnabled()
+
+
+def test_study_greek_left_to_right(app, store):
+    from vocab.gui.app import MainWindow
+    from vocab.gui.study import clause_html
+    deck = decks.create_deck(store, "G", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                    languages=["Greek"], answer_mode="self"))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    assert 'dir="ltr"' in clause_html(page.item)
+    assert "Greek" in page.clause.font().families()[0] or "SBL Greek" in page.clause.font().families()
+    page._enter()                                       # show answer and facts
+    assert "New Testament" in page.facts.text()
+
+
+def test_stats_overview_and_details(app, store):
     from fsrs import Rating
     from PySide6.QtWidgets import QLabel
     from vocab.gui.app import MainWindow
-    deck = decks.create_deck(store, "O", DeckConfig(plan_id="hebrew-frequency", new_per_day=2))
+    greek = decks.create_deck(store, "NT", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                      languages=["Greek"], new_per_day=2))
     win = MainWindow(store)
+    win.start_study(greek)
+    win.study.session.rate(win.study.item, Rating.Easy)         # ὁ learned
+    win.show_stats()
+    cards = {c.corpus: c for c in win.stats.cards}
+    assert set(cards) == {"bhsa", "n1904"}
+    hebrew_text = " ".join(l.text() for l in cards["bhsa"].findChildren(QLabel))
+    assert "Not started yet" in hebrew_text
+    greek_text = " ".join(l.text() for l in cards["n1904"].findChildren(QLabel))
+    assert "of the text learned" in greek_text and "1 word learned" in greek_text and "1 deck" in greek_text
+    # The overview has no per-book table; the details do.
+    assert "Genesis" not in " ".join(l.text() for l in win.stats.body.findChildren(QLabel))
+    cards["n1904"].details.click()
+    assert win.pages.currentWidget() is win.corpus_stats
+    assert win.corpus_stats.title.text() == "Greek New Testament (Nestle 1904)"
+    from PySide6.QtWidgets import QTableWidget
+    tables = win.corpus_stats.body.findChildren(QTableWidget)
+    assert tables[0].item(0, 0).text() == "Matthew" and tables[0].rowCount() == 27
+    assert tables[1].item(0, 0).text() == "NT"                   # only this text's decks
+    win.corpus_stats.finished.emit()                              # ← Statistics
+    assert win.pages.currentWidget() is win.stats
 
-    def texts():
-        return " ".join(l.text() for l in win.home.overview.findChildren(QLabel))
-    assert "mature words" in texts() and "0 reviews today" in texts()
-    assert "0" in texts() and "reviews today" in texts() and "study streak" in texts()
-    win.start_study(deck)
-    win.study.session.rate(win.study.item, Rating.Easy)     # one review, one learned word
-    win.show_home()                                          # back on the deck list: refreshed
-    labels = [l.text() for l in win.home.overview.findChildren(QLabel)]
-    assert labels[labels.index("reviews today") - 1] == "1"
-    assert labels[labels.index("young words") - 1] == "1"
-    assert len(win.home.findChildren(type(win.home.overview), "overview")) == 1   # no duplicates
+
+def test_stats_per_corpus_engine(store):
+    from datetime import datetime, timezone
+    from vocab import stats
+    for lex in ("grc:καί", "hbo:W"):
+        store.con.execute("INSERT INTO cards (lex_id, stem, state, due, last_review, created_at) "
+                          "VALUES (?, '*', 2, '2030-01-01T04:00:00.000+00:00', "
+                          "'2029-12-01T04:00:00.000+00:00', '2026-01-01T00:00:00.000+00:00')", (lex,))
+    store.con.commit()
+    now = datetime(2029, 12, 15, tzinfo=timezone.utc)
+    assert stats.summary(store, now).learned == 2
+    assert stats.summary(store, now, corpus="n1904").learned == 1
+    assert stats.summary(store, now, corpus="n1904").mature == 1          # 31-day interval
+    assert sum(n for _, n in stats.forecast(store, 30, now, corpus="bhsa")) == 1
+
+
+def test_deck_cards_select_and_study(app, store):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from vocab.gui.app import MainWindow
+    decks.create_deck(store, "A Hebrew", DeckConfig(plan_id="hebrew-frequency"))
+    decks.create_deck(store, "B Greek", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                   languages=["Greek"]))
+    win = MainWindow(store)
+    home = win.home
+    assert [c.deck.name for c in home.cards] == ["A Hebrew", "B Greek"]
+    assert [c.language for c in home.cards] == ["Hebrew", "Greek"]
+    assert [c.pill.text() for c in home.cards] == ["Hebrew Bible", "Greek NT"]
+    assert home.selected_deck().name == "A Hebrew" and home.cards[0].property("selected")
+    QTest.mouseClick(home.cards[1], Qt.LeftButton)              # click a card: selects it
+    assert home.selected_deck().name == "B Greek"
+    assert home.cards[1].property("selected") and not home.cards[0].property("selected")
+    QTest.keyClick(home, Qt.Key_Up)                              # arrow keys move the selection
+    assert home.selected_deck().name == "A Hebrew"
+    home.cards[1].study_btn.click()                              # Study › on a card studies that deck
+    assert win.pages.currentWidget() is win.study and win.study.deck_label.text() == "B Greek"
+    win.show_home()
+    QTest.keyClick(home, Qt.Key_Return)                          # Enter studies the selected deck
+    assert win.study.deck_label.text() == "A Hebrew"
+
+
+def test_study_button_disabled_when_nothing_to_study(app, store):
+    from fsrs import Rating
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from vocab.gui.app import MainWindow
+    decks.create_deck(store, "Busy", DeckConfig(plan_id="hebrew-frequency", new_per_day=5))
+    done = decks.create_deck(store, "Done", DeckConfig(plan_id="aramaic-frequency",
+                                                       languages=["Hebrew", "Aramaic"],
+                                                       answer_mode="self", new_per_day=1))
+    win = MainWindow(store)
+    win.start_study(done)
+    win.study._enter()
+    win.study.rate(Rating.Again)                 # the day's only new word, back in 1 minute
+    win.show_home()
+    home = win.home
+    busy, finished = home.cards
+    assert busy.study_btn.isEnabled() and busy.has_work
+    assert not finished.study_btn.isEnabled() and not finished.has_work
+    assert "come back at" in finished.study_btn.toolTip()
+    home.select_deck(done.deck_id)
+    QTest.keyClick(home, Qt.Key_Return)          # Enter does nothing for a finished deck
+    assert win.pages.currentWidget() is home
+    QTest.mouseDClick(finished, Qt.LeftButton)   # nor does a double-click
+    assert win.pages.currentWidget() is home
+
+
+def test_new_deck_card(app, store, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from vocab.gui import home as home_mod
+    from vocab.gui.app import MainWindow
+    opened = []
+    monkeypatch.setattr(home_mod.DeckEditor, "exec", lambda self: opened.append(self) or 0)
+    win = MainWindow(store)
+    home = win.home
+    assert home.cards == [] and home.new_card.isVisibleTo(home)          # no decks: just the card
+    from PySide6.QtWidgets import QLabel
+    assert "most common words" in " ".join(l.text() for l in home.new_card.findChildren(QLabel))
+    QTest.mouseClick(home.new_card, Qt.LeftButton)                       # opens the deck editor
+    assert len(opened) == 1 and opened[0].windowTitle() == "New deck"
+    decks.create_deck(store, "D", DeckConfig(plan_id="hebrew-frequency"))
+    home.refresh()
+    layout = home.cards_layout
+    assert layout.itemAt(0).widget() is home.cards[0] and layout.itemAt(1).widget() is home.new_card
+    from PySide6.QtWidgets import QPushButton
+    texts = {b.text() for b in home.findChildren(QPushButton)}
+    assert not texts & {"New deck…", "Edit…", "Delete", "Export…", "Import…"}   # no bottom row
+    assert "Import deck…" in texts
+
+
+def test_deck_card_menu(app, store, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from vocab.gui import home as home_mod
+    from vocab.gui.app import MainWindow
+    decks.create_deck(store, "First", DeckConfig(plan_id="hebrew-frequency"))
+    decks.create_deck(store, "Second", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                  languages=["Greek"]))
+    edited = []
+    monkeypatch.setattr(home_mod.DeckEditor, "exec", lambda self: edited.append(self.deck.name) or 0)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    path = tmp_path / "second.vocabdeck"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    win = MainWindow(store)
+    home = win.home
+    first, second = home.cards
+    assert home.selected_deck().name == "First"
+    assert [a.text() for a in second.more_btn.menu().actions() if a.text()] ==         ["Edit…", "Export…", "Delete…"]
+    second.actions_["edit"].trigger()                  # acts on that card's deck, not the selection
+    assert edited == ["Second"]
+    second.actions_["export"].trigger()
+    assert path.exists()
+    second.actions_["delete"].trigger()
+    assert [c.deck.name for c in home.cards] == ["First"]

@@ -74,15 +74,20 @@ def test_coverage(store):
     assert 0.10 < cov < 0.13
     add_card(store, "hbo:H", State.Learning, NOW)               # learning does not count
     assert stats.coverage(store) == cov
-    books = stats.coverage_by_book(store)
+    books = stats.coverage_by_book(store, corpus="bhsa")
     assert len(books) == 39 and books[0].book == "Genesis" and 0 < books[0].share < 1
+    greek = stats.coverage_by_book(store, corpus="n1904")
+    assert len(greek) == 27 and greek[0].book == "Matthew" and greek[0].known == 0
+    assert len(stats.coverage_by_book(store)) == 66
+    assert stats.coverage(store, "n1904") == 0
 
 
 def test_coverage_per_stem(store):
     add_card(store, "hbo:HLK[", State.Review, NOW, stem="qal")
     known = store.con.execute("SELECT COUNT(*) FROM bhsa.words WHERE lex_id='hbo:HLK[' "
                               "AND stem='qal'").fetchone()[0]
-    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words").fetchone()[0]
+    total = store.con.execute("SELECT COUNT(*) FROM bhsa.words w JOIN bhsa.lexemes l USING (lex_id) "
+                              "WHERE l.corpus = 'bhsa'").fetchone()[0]
     assert stats.coverage(store) == pytest.approx(known / total)
 
 
@@ -204,11 +209,11 @@ def test_young_and_mature(store):
     assert (s.learned, s.young, s.mature) == (2, 1, 1)
     assert s.retention_mature == 1.0 and s.retention_young == 0.5
     assert s.retention_30d == pytest.approx(2 / 3)
-    cov = stats.coverage_detail(store, UTC)
+    cov = stats.coverage_detail(store, tz=UTC)
     and_words = store.con.execute("SELECT COUNT(*) FROM bhsa.words WHERE lex_id='hbo:W'").fetchone()[0]
     the_words = store.con.execute("SELECT COUNT(*) FROM bhsa.words WHERE lex_id='hbo:H'").fetchone()[0]
     assert (cov.known, cov.mature) == (and_words + the_words, and_words)
-    books = stats.coverage_by_book(store, UTC)
+    books = stats.coverage_by_book(store, UTC, corpus="bhsa")
     assert sum(b.mature for b in books) == and_words
     deck = decks.create_deck(store, "d", DeckConfig(plan_id="hebrew-frequency"))
     p = stats.deck_progress(store, deck, UTC)

@@ -10,6 +10,13 @@ from PySide6.QtGui import QFont
 # A font is only used if it is installed; Times New Roman is the last resort.
 HEBREW_FONTS = ["SBL Hebrew", "Ezra SIL", "Taamey Frank CLM", "Noto Serif Hebrew",
                 "Times New Roman"]
+# Fonts with polytonic Greek (accents and breathings), best first.
+GREEK_FONTS = ["SBL Greek", "Gentium Plus", "Gentium Book Plus", "Cardo", "Noto Serif",
+               "Times New Roman"]
+
+# Readable names for Greek grammar values in N1904.
+GREEK_LABELS = {"middlepassive": "middle/passive", "p1": "1st person", "p2": "2nd person",
+                "p3": "3rd person"}
 
 POS_LABELS = {
     "subs": "noun", "verb": "verb", "adjv": "adjective", "advb": "adverb",
@@ -17,6 +24,7 @@ POS_LABELS = {
     "art": "article", "prps": "personal pronoun", "prde": "demonstrative pronoun",
     "prin": "interrogative pronoun", "inrg": "interrogative particle",
     "nega": "negative", "intj": "interjection",
+    "pron": "pronoun", "num": "numeral",          # Greek (N1904)
 }
 
 TENSE_LABELS = {
@@ -38,6 +46,14 @@ ACCENT = "#b7791f"      # highlight colour for the word being asked
 GOOD = "#2f855a"
 BAD = "#c53030"
 MUTED = "#718096"
+
+
+def text_font(language: str, point_size: int) -> QFont:
+    """The font for words in a language: Hebrew/Aramaic or Greek."""
+    font = QFont()
+    font.setFamilies(GREEK_FONTS if language == "Greek" else HEBREW_FONTS)
+    font.setPointSize(point_size)
+    return font
 
 
 def hebrew_font(point_size: int) -> QFont:

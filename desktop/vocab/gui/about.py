@@ -30,7 +30,8 @@ STYLE = """
 IDEA = STYLE + f"""
 <h2>The idea</h2>
 <p>Vocab brings together two things: a <b>flash card approach</b> to learning vocabulary, and
-the <b>actual text of the Hebrew Bible</b>.</p>
+the <b>actual text of the Bible</b>: the Hebrew Bible (Hebrew and Aramaic) and the Greek New
+Testament.</p>
 <p><b>Flash cards with spaced repetition.</b> As with paper flash cards, you see a word and try
 to recall its meaning. The difference is that Vocab keeps track of how well you know each word
 and shows it again just before you would forget it: a new or difficult word comes back after a
@@ -38,28 +39,32 @@ few minutes, a well-known word only after weeks or months. Your study time goes 
 need it. The method is the one used by popular flash card programs such as Anki, and the
 scheduling is done with FSRS, the same algorithm Anki uses.</p>
 <p><b>Words as they occur in the text.</b> Ordinary flash cards show the dictionary form of a
-word. Vocab instead shows each word <b>as it is written in a real verse</b> of the Hebrew Bible,
-with its prefixes, suffixes and vowels, and in its clause. Each time, it picks another place where
+word. Vocab instead shows each word <b>as it is written in a real verse</b>, with its
+prefixes, suffixes, endings and accents, and in its clause. Each time, it picks another place where
 the word occurs, so you learn to recognise it the way you will meet it when reading. This is
-possible thanks to the BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis), a database of the
-Hebrew Bible made by the Eep Talstra Centre for Bible and Computer (ETCBC) in Amsterdam, in which
-every word is analysed.</p>
+possible thanks to databases of the text in which every word is analysed: the BHSA (Biblia
+Hebraica Stuttgartensia Amstelodamensis) for the Hebrew Bible, made by the Eep Talstra Centre for
+Bible and Computer (ETCBC) in Amsterdam, and the Nestle 1904 Greek New Testament (N1904), made
+by the Center of Biblical Languages and Computing and the ETCBC.</p>
 
 <h2>What Vocab can do</h2>
 <ul>
-  <li><b>Attested forms in context.</b> Every review shows a different occurrence from the Hebrew
-      Bible, forms you haven't seen first. Qere/ketiv cases are not asked about.</li>
-  <li><b>Decks.</b> Predefined plans from the most to the least frequent word (Hebrew, or
-      Aramaic), or your own selection by part of speech, frequency, verbal stem, tense, suffix,
-      and books with chapters (e.g. Genesis 1-3; 11; 45-48). Each verbal stem can optionally be
-      learned as a word of its own. Progress is shared between decks.</li>
+  <li><b>Attested forms in context.</b> Every review shows a different occurrence from the text,
+      forms you haven't seen first. Hebrew qere/ketiv cases are not asked about.</li>
+  <li><b>Hebrew, Aramaic and Greek.</b> Decks from the Hebrew Bible or from the Greek New
+      Testament, each shown in its own direction and font.</li>
+  <li><b>Decks.</b> Predefined plans from the most to the least frequent word (Hebrew, Aramaic
+      or New Testament Greek), or your own selection by part of speech, frequency, Hebrew verbal
+      stem or Greek tense, voice and mood, and books with chapters (e.g. Genesis 1-3; 11; 45-48).
+      Progress is shared between decks.</li>
   <li><b>Two ways to answer.</b> Type the gloss, or show the answer and rate yourself as in
       Anki.</li>
   <li><b>Statistics.</b> How much of the text of each book you know, young and mature words,
       retention, your progress per deck, and the reviews coming up.</li>
   <li><b>Personal scheduling.</b> After {MIN_REVIEWS} reviews, FSRS can be fitted to your own
       answers.</li>
-  <li><b>Glosses.</b> English and Danish are included. Edit any gloss while studying, or import
+  <li><b>Glosses.</b> Hebrew: English and Danish. Greek: Danish, English, Dutch, Portuguese,
+      Swahili and (partly) Spanish. Edit any gloss while studying, or import
       a gloss file in another language.</li>
   <li><b>Sharing.</b> Export a deck (with your own glosses, without your progress) and import
       decks from others. Progress from the notebook version can be imported too.</li>
@@ -118,12 +123,23 @@ LICENCE = STYLE + f"""
 <p>Vocab is licensed under the <a href="https://creativecommons.org/licenses/by-nc/4.0/">Creative
 Commons Attribution-NonCommercial 4.0 International licence (CC BY-NC 4.0)</a>, the licence of
 the BHSA data it is built on. You may use, share and adapt Vocab freely, but <b>not
-commercially</b>, and you must give appropriate credit to {AUTHOR} and to the ETCBC.</p>
+commercially</b>, and you must give appropriate credit to {AUTHOR}, to the ETCBC and to the other
+sources below.</p>
 
 <h2>Data</h2>
 <p>BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis), version 2021, by the Eep Talstra Centre
 for Bible and Computer (ETCBC), Vrije Universiteit Amsterdam, licensed under CC BY-NC 4.0:
 <a href="https://github.com/ETCBC/bhsa">github.com/ETCBC/bhsa</a>.</p>
+<p>Greek New Testament: Nestle 1904, Text-Fabric edition N1904 by the Center of Biblical
+Languages and Computing (CBLC) and the ETCBC, MIT licence:
+<a href="https://github.com/CenterBLC/N1904">github.com/CenterBLC/N1904</a>; based on MACULA Greek
+by Clear Bible, licensed under CC BY 4.0:
+<a href="https://github.com/Clear-Bible/macula-greek">github.com/Clear-Bible/macula-greek</a>.</p>
+<p>Greek glosses (Danish, English, Dutch, Portuguese, Swahili, Spanish): Bible Online Learner by
+Ezer IT Consulting (Claus Tøndering), used with permission:
+<a href="https://learner.bible">learner.bible</a>,
+<a href="https://github.com/EzerIT/BibleOL">github.com/EzerIT/BibleOL</a>. Two Danish glosses
+are corrected in Vocab.</p>
 
 <h2>Components</h2>
 <table>

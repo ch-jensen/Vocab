@@ -20,7 +20,7 @@ from ..migrate import import_score_csv
 from ..store import APP_ROOT, Store
 from .about import AboutDialog
 from .home import HomePage
-from .stats_page import StatsPage
+from .stats_page import CorpusStatsPage, StatsPage
 from .study import StudyPage
 
 # The base font size is set with QApplication.setFont, not here: a font size in
@@ -42,6 +42,28 @@ QProgressBar { background: #e8e7e2; border: none; border-radius: 5px; }
 QProgressBar::chunk { background: #2a78d6; border-radius: 5px; }
 QFrame#tile { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; }
 QLabel#tileValue { font-size: 20pt; font-weight: 600; }
+QFrame#deckCard { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; }
+QFrame#deckCard:hover { border-color: #d6b37a; }
+QFrame#deckCard[selected="true"] { border: 2px solid #b7791f; background: #fffaf0; }
+QLabel#deckName { font-size: 13.5pt; font-weight: 600; }
+QToolButton#more { border: none; border-radius: 6px; color: #4a5568; font-size: 18pt; font-weight: 700;
+                   padding: 0px 6px 4px 6px; }
+QToolButton#more:hover { background: #edf2f7; color: #1a202c; }
+QToolButton#more::menu-indicator { image: none; width: 0px; }
+QMenu { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 4px; }
+QMenu::item { padding: 6px 22px 6px 14px; border-radius: 5px; }
+QMenu::item:selected { background: #fbe3b0; color: #1a202c; }
+QMenu::separator { height: 1px; background: #e2e8f0; margin: 4px 8px; }
+QPushButton#quiet { border: none; background: transparent; color: #8a5a12; padding: 4px 8px; }
+QPushButton#quiet:hover { color: #b7791f; text-decoration: underline; }
+QFrame#newDeckCard { background: transparent; border: 2px dashed #cbd5e0; border-radius: 10px; }
+QFrame#newDeckCard:hover { border-color: #b7791f; background: #fffaf0; }
+QLabel#newDeckPlus { background: #b7791f; color: #ffffff; border-radius: 17px;
+                     font-size: 18pt; font-weight: 600; }
+QLabel#deckFigure { font-size: 15pt; font-weight: 600; }
+QPushButton#primary { background: #b7791f; color: #ffffff; border: 1px solid #b7791f; font-weight: 600; }
+QPushButton#primary:hover { background: #9c6519; }
+QPushButton#primary:disabled { background: #ead9bd; border-color: #ead9bd; color: #ffffff; }
 QFrame#tileCompact { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; }
 QLabel#tileValueCompact { font-size: 12pt; font-weight: 600; }
 QTableWidget { font-size: 12pt; selection-background-color: #fbe3b0; selection-color: #1a202c; }
@@ -79,6 +101,10 @@ class MainWindow(QMainWindow):
         self.stats = StatsPage(store)
         self.pages.addWidget(self.stats)
         self.stats.finished.connect(self.show_home)
+        self.corpus_stats = CorpusStatsPage(store)
+        self.pages.addWidget(self.corpus_stats)
+        self.stats.details_requested.connect(self.show_corpus_stats)
+        self.corpus_stats.finished.connect(self.show_stats)
         self.home.stats_requested.connect(self.show_stats)
         self.setCentralWidget(self.pages)
 
@@ -118,6 +144,10 @@ class MainWindow(QMainWindow):
     def show_home(self) -> None:
         self.home.refresh()
         self.pages.setCurrentWidget(self.home)
+
+    def show_corpus_stats(self, corpus: str) -> None:
+        self.corpus_stats.show_corpus(corpus)
+        self.pages.setCurrentWidget(self.corpus_stats)
 
     def show_stats(self) -> None:
         self.stats.refresh()
@@ -281,6 +311,14 @@ def self_test(app: QApplication, report: str, bhsa_db: str | None) -> int:
             window.study.answer.setText("and")
             window.study._enter()
             assert "Correct" in window.study.feedback.text()
+            greek = decks.create_deck(store, "Greek", DeckConfig(
+                corpus="n1904", plan_id="greek-frequency", languages=["Greek"]))
+            window.start_study(greek)
+            assert window.study.item.key.lex_id == "grc:ὁ", window.study.item
+            window.study.answer.setText("the")
+            window.study._enter()
+            assert "Correct" in window.study.feedback.text()
+            lines.append("greek " + window.study.item.clause[0].form)
             window.show_stats()
             lines.append(f"coverage {stats.coverage(store):.4f}")
             lines.append(f"optimizer {optimize.fit(optimize.training_data(store), None).message}")

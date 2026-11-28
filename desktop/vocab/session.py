@@ -29,7 +29,7 @@ from typing import Callable
 from fsrs import Card, Rating, Scheduler, State
 
 from . import answers
-from .decks import ALL_STEMS, CardKey, Deck, deck_cards, occurrences
+from .decks import ALL_STEMS, RTL_LANGUAGES, CardKey, Deck, deck_cards, occurrences
 from .occurrences import choose_occurrence
 from .store import DAY_ROLLOVER_HOUR, Store, day_start, parse_ts, ts  # noqa: F401 (re-exported)
 
@@ -78,6 +78,15 @@ class StudyItem:
     gloss: str                 # gloss text to show after answering
     expected: list[str]        # accepted answers
     group: str = "new"         # which count it was taken from: 'new' | 'learning' | 'due'
+    language: str = "Hebrew"   # 'Hebrew' | 'Aramaic' | 'Greek'
+    voice: str = "NA"          # Greek verbs
+    mood: str = "NA"
+    noun_case: str = "NA"      # Greek nouns, adjectives, pronouns, participles
+
+    @property
+    def rtl(self) -> bool:
+        """Written right to left (Hebrew and Aramaic)."""
+        return self.language in RTL_LANGUAGES
 
 
 @dataclass
@@ -277,10 +286,12 @@ class StudySession:
         return StudyItem(
             group=self.group_of(row),
             key=key, card_id=card_id, is_new=row is None, node=node,
-            clause=[ClauseWord(r[0], r[1], r[2], r[3]) for r in self.store.clause_words(word["clause_id"])],
+            clause=[ClauseWord(r[0], r[1], r[2], r[3]) for r in self.store.context_words(word)],
             reference=self.store.reference(word["verse_id"]),
             lex_utf8=lex["lex_utf8"], voc_lex_utf8=lex["voc_lex_utf8"], sp=lex["sp"],
             freq=lex["freq"], rank=lex["rank"], stem=word["stem"], tense=word["tense"],
+            language=lex["language"], voice=word["voice"], mood=word["mood"],
+            noun_case=word["noun_case"],
             gloss=gloss, expected=answers.split_glosses(gloss),
         )
 
