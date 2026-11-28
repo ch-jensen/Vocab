@@ -86,7 +86,7 @@ class HomePage(QWidget):
         layout.addWidget(self.summary)
         # Overview figures, the same as at the top of the statistics; rebuilt in refresh().
         self.overview_box = QVBoxLayout()
-        self.overview_box.setContentsMargins(0, 4, 0, 8)
+        self.overview_box.setContentsMargins(0, 2, 0, 6)
         layout.addLayout(self.overview_box)
         layout.addWidget(self.table, 1)
         layout.addWidget(self.empty)
@@ -128,7 +128,7 @@ class HomePage(QWidget):
             if old is not None:
                 old.setParent(None)          # gone at once, not only when Qt next idles
                 old.deleteLater()
-        self.overview = overview_tiles(self.store)
+        self.overview = overview_tiles(self.store, compact=True)
         self.overview_box.addWidget(self.overview)
         self._update_buttons()
 
