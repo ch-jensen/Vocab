@@ -357,3 +357,42 @@ def test_about_window(app):
     assert "Again" in text[1] and "your usual time" in text[1] and "21 days" in text[1]
     assert "Christian Canu Højgaard" in text[2] and "CC BY-NC 4.0" in text[2]
     assert "ETCBC" in text[2]
+
+
+def test_current_group_underlined(app, store):
+    from fsrs import Rating
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "U", DeckConfig(plan_id="hebrew-frequency",
+                                                    answer_mode="self", new_per_day=1))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    assert page.counts.current() == "new"
+    assert page.counts.new.font().underline() and not page.counts.due.font().underline()
+    page._enter()
+    page.rate(Rating.Again)                     # nothing else due: finished for now
+    assert page.item is None and page.counts.current() is None
+    from datetime import datetime, timedelta, timezone
+    page.session.clock = lambda: datetime.now(timezone.utc) + timedelta(minutes=2)
+    page.next_card()
+    assert page.item is not None and page.counts.current() == "learning"
+
+
+def test_overview_tiles_on_deck_list(app, store):
+    from fsrs import Rating
+    from PySide6.QtWidgets import QLabel
+    from vocab.gui.app import MainWindow
+    deck = decks.create_deck(store, "O", DeckConfig(plan_id="hebrew-frequency", new_per_day=2))
+    win = MainWindow(store)
+
+    def texts():
+        return " ".join(l.text() for l in win.home.overview.findChildren(QLabel))
+    assert "mature words" in texts() and "0 reviews today" in texts()
+    assert "0" in texts() and "reviews today" in texts() and "study streak" in texts()
+    win.start_study(deck)
+    win.study.session.rate(win.study.item, Rating.Easy)     # one review, one learned word
+    win.show_home()                                          # back on the deck list: refreshed
+    labels = [l.text() for l in win.home.overview.findChildren(QLabel)]
+    assert labels[labels.index("reviews today") - 1] == "1"
+    assert labels[labels.index("young words") - 1] == "1"
+    assert len(win.home.findChildren(type(win.home.overview), "overview")) == 1   # no duplicates

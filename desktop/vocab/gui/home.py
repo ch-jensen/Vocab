@@ -14,6 +14,7 @@ from ..store import Store
 from .common import BAD, GOOD
 from .counts import DUE_TIP, LEARNING_TIP, NEW_TIP, learning_text
 from .deck_editor import DeckEditor
+from .stats_page import overview_tiles
 
 
 class HomePage(QWidget):
@@ -83,6 +84,10 @@ class HomePage(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.addWidget(title)
         layout.addWidget(self.summary)
+        # Overview figures, the same as at the top of the statistics; rebuilt in refresh().
+        self.overview_box = QVBoxLayout()
+        self.overview_box.setContentsMargins(0, 2, 0, 6)
+        layout.addLayout(self.overview_box)
         layout.addWidget(self.table, 1)
         layout.addWidget(self.empty)
         layout.addLayout(buttons)
@@ -118,6 +123,13 @@ class HomePage(QWidget):
                              f"{total_reviews} reviews in total")
         self.summary.setToolTip(f"Mature words have an interval of {stats.MATURE_DAYS} days or "
                                 "more; see Statistics for details.")
+        while self.overview_box.count():
+            old = self.overview_box.takeAt(0).widget()
+            if old is not None:
+                old.setParent(None)          # gone at once, not only when Qt next idles
+                old.deleteLater()
+        self.overview = overview_tiles(self.store, compact=True)
+        self.overview_box.addWidget(self.overview)
         self._update_buttons()
 
     def selected_deck(self) -> decks.Deck | None:

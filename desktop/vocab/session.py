@@ -77,6 +77,7 @@ class StudyItem:
     tense: str
     gloss: str                 # gloss text to show after answering
     expected: list[str]        # accepted answers
+    group: str = "new"         # which count it was taken from: 'new' | 'learning' | 'due'
 
 
 @dataclass
@@ -252,6 +253,15 @@ class StudySession:
         return self._make_item(key, row)
 
     # --- building an item --------------------------------------------------
+    def group_of(self, row: sqlite3.Row | None) -> str:
+        """Which count a card belongs to now, using the same rules as counts()."""
+        if row is None:
+            return "new"
+        if row["state"] in (State.Learning, State.Relearning) and \
+                row["due"] >= ts(day_start(self.clock(), self.tz)):
+            return "learning"            # a step taken today
+        return "due"                     # learned, or left in learning since an earlier day
+
     def _make_item(self, key: CardKey, row: sqlite3.Row | None) -> StudyItem:
         card_id = row["card_id"] if row else None
         last_shown = {}
@@ -265,6 +275,7 @@ class StudySession:
         glosses = self.store.glosses(key.lex_id, self.cfg.gloss_language)
         gloss = expected_gloss(glosses, word["stem"], key.stem)
         return StudyItem(
+            group=self.group_of(row),
             key=key, card_id=card_id, is_new=row is None, node=node,
             clause=[ClauseWord(r[0], r[1], r[2], r[3]) for r in self.store.clause_words(word["clause_id"])],
             reference=self.store.reference(word["verse_id"]),
