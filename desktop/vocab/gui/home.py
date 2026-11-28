@@ -31,36 +31,49 @@ def language_pill(text: str) -> QLabel:
     return pill
 
 
+def figure(caption: str, value: str, extra: str = "", tip: str = "") -> QLabel:
+    """A caption in grey above a value in bold (optionally with a grey note after it)."""
+    note = f' <span style="color:#718096; font-size:10pt;">{extra}</span>' if extra else ""
+    label = QLabel(f'<span style="color:#718096;">{caption}</span><br>'
+                   f'<span style="font-size:14pt; font-weight:600;">{value}</span>{note}')
+    label.setToolTip(tip)
+    return label
+
+
 class ProgressBarStrip(QFrame):
-    """The bar at the top of the front page: study streak, reviews over the last
-    7 days, and a button to the statistics."""
+    """The bar at the top of the front page: study streak, words learned, reviews in
+    total and over the last 7 days (with a small chart), and a button to the statistics."""
 
     def __init__(self, store: Store, on_stats, parent=None):
         super().__init__(parent)
         self.setObjectName("tileCompact")
         s = stats.summary(store)
         week = stats.reviews_per_day(store, 7)
+        week_total = sum(n for _, n in week)
 
-        self.streak = QLabel(f'<span style="font-size:14pt; font-weight:600;">{s.streak_days}</span>'
-                             f' {"day" if s.streak_days == 1 else "days"} study streak')
-        self.streak.setToolTip("Days in a row with at least one review.")
+        self.streak = figure("Study streak", f'{s.streak_days} {"day" if s.streak_days == 1 else "days"}',
+                             tip="Days in a row with at least one review.")
+        self.learned = figure("Words learned", str(s.learned), f"{s.mature} mature",
+                              tip=f"Words that have graduated from learning. Mature words have an "
+                                  f"interval of {stats.MATURE_DAYS} days or more.")
+        self.total = figure("Reviews in total", str(s.reviews_total),
+                            tip="All your answers since you started.")
+        self.week_label = figure("Last 7 days", str(week_total), tip="Your reviews over the last 7 days.")
         self.chart = WeekBars("reviews")
         self.chart.set_data(week)
-        total = sum(n for _, n in week)
-        self.week_label = QLabel(f'Reviews, last 7 days<br><span style="color:#1a202c; font-size:14pt; '
-                                 f'font-weight:600;">{total}</span>')
-        self.week_label.setObjectName("muted")
         self.stats_btn = QPushButton("Statistics ›")
         self.stats_btn.clicked.connect(on_stats)
 
-        line = QFrame()
-        line.setFrameShape(QFrame.VLine)
-        line.setObjectName("rule")
         row = QHBoxLayout(self)
         row.setContentsMargins(14, 6, 10, 6)
         row.setSpacing(14)
-        row.addWidget(self.streak)
-        row.addWidget(line)
+        parts = [self.streak, self.learned, self.total]
+        for part in parts:
+            row.addWidget(part)
+            line = QFrame()
+            line.setFrameShape(QFrame.VLine)
+            line.setObjectName("rule")
+            row.addWidget(line)
         row.addWidget(self.week_label)
         row.addWidget(self.chart)
         row.addStretch()
@@ -176,8 +189,6 @@ class HomePage(QWidget):
 
         title = QLabel("Decks")
         title.setObjectName("title")
-        self.summary = QLabel()
-        self.summary.setObjectName("muted")
 
         # The decks, one card each, in a scroll area.
         self.cards: list[DeckCard] = []
@@ -223,7 +234,6 @@ class HomePage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.addWidget(title)
-        layout.addWidget(self.summary)
         # Overview figures, the same as at the top of the statistics; rebuilt in refresh().
         self.overview_box = QVBoxLayout()
         self.overview_box.setContentsMargins(0, 2, 0, 6)
@@ -256,12 +266,6 @@ class HomePage(QWidget):
         self.scroll.setVisible(bool(self._decks))
         self.empty.setVisible(not self._decks)
 
-        maturity = stats._maturity(self.store)
-        total_reviews = self.store.con.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
-        self.summary.setText(f"{len(maturity)} words learned ({sum(maturity.values())} mature) · "
-                             f"{total_reviews} reviews in total")
-        self.summary.setToolTip(f"Mature words have an interval of {stats.MATURE_DAYS} days or "
-                                "more; see Statistics for details.")
         while self.overview_box.count():
             old = self.overview_box.takeAt(0).widget()
             if old is not None:

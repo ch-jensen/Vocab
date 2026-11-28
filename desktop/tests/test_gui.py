@@ -388,13 +388,16 @@ def test_streak_and_week_bar_on_deck_list(app, store):
     win = MainWindow(store)
     bar = win.home.overview
     assert isinstance(bar, ProgressBarStrip)
-    assert "0</span> days study streak" in bar.streak.text()
+    assert "0 days" in bar.streak.text() and "Study streak" in bar.streak.text()
+    assert ">0</span>" in bar.learned.text() and "0 mature" in bar.learned.text()
+    assert ">0</span>" in bar.total.text()
     assert len(bar.chart.data) == 7 and sum(n for _, n in bar.chart.data) == 0
     win.start_study(deck)
     win.study.session.rate(win.study.item, Rating.Easy)     # one review today
     win.show_home()                                          # back on the deck list: refreshed
     bar = win.home.overview
-    assert "1</span> day study streak" in bar.streak.text()
+    assert "1 day<" in bar.streak.text()
+    assert ">1</span>" in bar.learned.text() and ">1</span>" in bar.total.text()
     assert bar.chart.data[-1][1] == 1 and ">1</span>" in bar.week_label.text()
     assert len(win.home.findChildren(ProgressBarStrip)) == 1      # no duplicates
     bar.stats_btn.click()                                     # Statistics › opens the statistics
