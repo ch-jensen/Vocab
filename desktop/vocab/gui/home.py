@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QMenu, QMessageBox,
+                               QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
+                               QWidget)
 
 from .. import deckfile, decks, stats
 from ..session import StudySession
@@ -122,6 +123,9 @@ class DeckCard(QFrame):
 
     clicked = Signal(object)          # DeckCard
     study = Signal(object)            # Deck
+    edit = Signal(object)             # Deck
+    export = Signal(object)           # Deck
+    delete = Signal(object)           # Deck
 
     def __init__(self, store: Store, deck: decks.Deck, parent=None):
         super().__init__(parent)
@@ -196,6 +200,13 @@ class DeckCard(QFrame):
             self.study_btn.setToolTip("Nothing more to study in this deck today.")
         right.addSpacing(6)
         right.addWidget(self.study_btn)
+        self.more_btn = QToolButton()
+        self.more_btn.setObjectName("more")
+        self.more_btn.setText("⋯")
+        self.more_btn.setToolTip("Edit, export or delete this deck")
+        self.more_btn.setPopupMode(QToolButton.InstantPopup)
+        self.more_btn.setMenu(self.menu())
+        right.addWidget(self.more_btn)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(16, 12, 16, 12)
@@ -211,6 +222,26 @@ class DeckCard(QFrame):
     def mousePressEvent(self, event) -> None:
         self.clicked.emit(self)
         super().mousePressEvent(event)
+
+    def menu(self) -> QMenu:
+        """Edit…, Export…, Delete: the deck's actions (also on right-click)."""
+        menu = QMenu(self)
+        menu.setObjectName("deckMenu")
+        edit = menu.addAction("Edit…")
+        edit.triggered.connect(lambda: self.edit.emit(self.deck))
+        export = menu.addAction("Export…")
+        export.setToolTip("Save this deck as a file to share. Your progress is not included.")
+        export.triggered.connect(lambda: self.export.emit(self.deck))
+        menu.addSeparator()
+        delete = menu.addAction("Delete…")
+        delete.setObjectName("delete")
+        delete.triggered.connect(lambda: self.delete.emit(self.deck))
+        self.actions_ = {"edit": edit, "export": export, "delete": delete}
+        return menu
+
+    def contextMenuEvent(self, event) -> None:
+        self.clicked.emit(self)
+        self.more_btn.menu().exec(event.globalPos())
 
     def mouseDoubleClickEvent(self, event) -> None:
         if self.has_work:
@@ -241,24 +272,14 @@ class HomePage(QWidget):
         self.scroll.setWidget(self.deck_list)
         self.setFocusPolicy(Qt.StrongFocus)
 
-        self.edit_btn = QPushButton("Edit…")
-        self.edit_btn.clicked.connect(self.edit_deck)
-        self.delete_btn = QPushButton("Delete")
-        self.delete_btn.clicked.connect(self.delete_deck)
-        self.export_btn = QPushButton("Export…")
-        self.export_btn.setToolTip("Save this deck as a file to share. Your progress is not included.")
-        self.export_btn.clicked.connect(self.export_deck)
-        import_btn = QPushButton("Import…")
-        import_btn.setToolTip("Add a deck from a .vocabdeck file.")
-        import_btn.clicked.connect(self.import_deck)
-
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        buttons.addWidget(self.edit_btn)
-        buttons.addWidget(self.delete_btn)
-        buttons.addSpacing(12)
-        buttons.addWidget(self.export_btn)
-        buttons.addWidget(import_btn)
+        self.import_btn = QPushButton("Import deck…")
+        self.import_btn.setObjectName("quiet")
+        self.import_btn.setToolTip("Add a deck from a .vocabdeck file, e.g. one shared by a teacher.")
+        self.import_btn.clicked.connect(self.import_deck)
+        header = QHBoxLayout()
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(self.import_btn, 0, Qt.AlignBottom)
 
         self.empty = QLabel("No decks yet. Click <b>New deck…</b> and choose "
                             "<i>Biblical Hebrew by frequency</i> to start with the most common words.")
@@ -267,14 +288,13 @@ class HomePage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.addWidget(title)
+        layout.addLayout(header)
         # Overview figures, the same as at the top of the statistics; rebuilt in refresh().
         self.overview_box = QVBoxLayout()
         self.overview_box.setContentsMargins(0, 2, 0, 6)
         layout.addLayout(self.overview_box)
         layout.addWidget(self.scroll, 1)
         layout.addWidget(self.empty)
-        layout.addLayout(buttons)
         self._decks: list[decks.Deck] = []
 
     def refresh(self) -> None:
@@ -290,6 +310,9 @@ class HomePage(QWidget):
             card = DeckCard(self.store, deck)
             card.clicked.connect(lambda c: self._select(self.cards.index(c)))
             card.study.connect(self.study_requested.emit)
+            card.edit.connect(lambda d: self._on_deck(d, self.edit_deck))
+            card.export.connect(lambda d: self._on_deck(d, self.export_deck))
+            card.delete.connect(lambda d: self._on_deck(d, self.delete_deck))
             self.cards_layout.addWidget(card)
             self.cards.append(card)
         self.new_card = NewDeckCard(first=not self._decks)
@@ -337,10 +360,13 @@ class HomePage(QWidget):
         else:
             super().keyPressEvent(event)
 
+    def _on_deck(self, deck: decks.Deck, action) -> None:
+        """Run a deck action (edit, export, delete) from a card's menu on that deck."""
+        self.select_deck(deck.deck_id)
+        action()
+
     def _update_buttons(self) -> None:
-        has = self.selected_deck() is not None
-        for b in (self.edit_btn, self.delete_btn, self.export_btn):
-            b.setEnabled(has)
+        pass                              # the deck actions are on each card now
 
     def study(self) -> None:
         """Study the selected deck, if it has anything to study right now."""

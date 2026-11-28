@@ -549,4 +549,33 @@ def test_new_deck_card(app, store, monkeypatch):
     home.refresh()
     layout = home.cards_layout
     assert layout.itemAt(0).widget() is home.cards[0] and layout.itemAt(1).widget() is home.new_card
-    assert not [b for b in home.findChildren(type(home.edit_btn)) if b.text() == "New deck…"]
+    from PySide6.QtWidgets import QPushButton
+    texts = {b.text() for b in home.findChildren(QPushButton)}
+    assert not texts & {"New deck…", "Edit…", "Delete", "Export…", "Import…"}   # no bottom row
+    assert "Import deck…" in texts
+
+
+def test_deck_card_menu(app, store, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from vocab.gui import home as home_mod
+    from vocab.gui.app import MainWindow
+    decks.create_deck(store, "First", DeckConfig(plan_id="hebrew-frequency"))
+    decks.create_deck(store, "Second", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                  languages=["Greek"]))
+    edited = []
+    monkeypatch.setattr(home_mod.DeckEditor, "exec", lambda self: edited.append(self.deck.name) or 0)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    path = tmp_path / "second.vocabdeck"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    win = MainWindow(store)
+    home = win.home
+    first, second = home.cards
+    assert home.selected_deck().name == "First"
+    assert [a.text() for a in second.more_btn.menu().actions() if a.text()] ==         ["Edit…", "Export…", "Delete…"]
+    second.actions_["edit"].trigger()                  # acts on that card's deck, not the selection
+    assert edited == ["Second"]
+    second.actions_["export"].trigger()
+    assert path.exists()
+    second.actions_["delete"].trigger()
+    assert [c.deck.name for c in home.cards] == ["First"]

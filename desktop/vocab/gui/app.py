@@ -46,6 +46,16 @@ QFrame#deckCard { background: #ffffff; border: 1px solid #e2e8f0; border-radius:
 QFrame#deckCard:hover { border-color: #d6b37a; }
 QFrame#deckCard[selected="true"] { border: 2px solid #b7791f; background: #fffaf0; }
 QLabel#deckName { font-size: 13.5pt; font-weight: 600; }
+QToolButton#more { border: none; border-radius: 6px; color: #4a5568; font-size: 18pt; font-weight: 700;
+                   padding: 0px 6px 4px 6px; }
+QToolButton#more:hover { background: #edf2f7; color: #1a202c; }
+QToolButton#more::menu-indicator { image: none; width: 0px; }
+QMenu { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 4px; }
+QMenu::item { padding: 6px 22px 6px 14px; border-radius: 5px; }
+QMenu::item:selected { background: #fbe3b0; color: #1a202c; }
+QMenu::separator { height: 1px; background: #e2e8f0; margin: 4px 8px; }
+QPushButton#quiet { border: none; background: transparent; color: #8a5a12; padding: 4px 8px; }
+QPushButton#quiet:hover { color: #b7791f; text-decoration: underline; }
 QFrame#newDeckCard { background: transparent; border: 2px dashed #cbd5e0; border-radius: 10px; }
 QFrame#newDeckCard:hover { border-color: #b7791f; background: #fffaf0; }
 QLabel#newDeckPlus { background: #b7791f; color: #ffffff; border-radius: 17px;
