@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QRectF, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import (QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+from PySide6.QtWidgets import (QAbstractItemView, QDialog, QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                                QLabel, QMessageBox, QProgressBar, QPushButton, QScrollArea,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import decks, optimize, stats
+from ..decks import CORPORA
 from ..session import fsrs_parameters
 from ..store import Store
 from .charts import BarChart
@@ -133,11 +134,12 @@ def progress_table(headers: list[str], rows: list[tuple[str, int, int, int]],
     return table
 
 
-def overview_tiles(store: Store, compact: bool = False) -> QWidget:
-    """The row of overview figures (shared by the deck list and the statistics).
+def overview_tiles(store: Store, compact: bool = False, corpus: str | None = None) -> QWidget:
+    """The row of overview figures (shared by the deck list and the statistics), for all
+    your words or for one corpus.
 
     The deck list uses the compact form, so the decks themselves stay in focus."""
-    s = stats.summary(store)
+    s = stats.summary(store, corpus=corpus)
     tiles = QGridLayout()
     tiles.setContentsMargins(0, 0, 0, 0)
     if compact:
@@ -181,24 +183,73 @@ class FitWorker(QObject):
             self.done.emit(exc)
 
 
-class StatsPage(QWidget):
-    finished = Signal()
+def corpora_in_database(store: Store) -> list[str]:
+    return [c for c in CORPORA if store.books(c)]
 
-    def __init__(self, store: Store, parent=None):
+
+class CorpusCard(QFrame):
+    """A brief overview of one text, with a button to its detailed statistics."""
+
+    def __init__(self, store: Store, corpus: str, on_details, parent=None):
         super().__init__(parent)
-        self.store = store
-        self._thread: QThread | None = None
+        self.setObjectName("tile")
+        self.corpus = corpus
+        cov = stats.coverage_detail(store, corpus)
+        s = stats.summary(store, corpus=corpus)
+        n_decks = sum(1 for d in decks.list_decks(store) if d.config.corpus == corpus)
+        reviews_30 = sum(n for _, n in stats.reviews_per_day(store, 30, corpus=corpus))
 
-        back = QPushButton("← Decks")
-        back.setFlat(True)
-        back.clicked.connect(self.finished.emit)
-        title = QLabel("Statistics")
-        title.setObjectName("title")
-        header = QHBoxLayout()
-        header.addWidget(back)
-        header.addWidget(title)
-        header.addStretch()
+        title = QLabel(CORPORA[corpus])
+        title.setObjectName("subtitle")
+        self.details = QPushButton("Details ›")
+        self.details.setToolTip(f"Detailed statistics for {CORPUS_TEXT[corpus]}")
+        self.details.clicked.connect(lambda: on_details(corpus))
+        top = QHBoxLayout()
+        top.addWidget(title)
+        top.addStretch()
+        top.addWidget(self.details)
 
+        v = QVBoxLayout(self)
+        v.setContentsMargins(14, 10, 14, 12)
+        v.addLayout(top)
+        if s.learned + s.learning == 0:
+            note = QLabel("Not started yet. Make a deck with this text to begin.")
+            note.setObjectName("muted")
+            v.addWidget(note)
+            return
+        self.share = QLabel(
+            f'<span style="font-size:18pt; font-weight:600;">{100 * cov.share:.1f}%</span>'
+            f' of the text learned <span style="color:#718096;">· {100 * cov.mature_share:.1f}% mature</span>')
+        v.addWidget(self.share)
+        v.addWidget(StackedBar(cov.mature, cov.known - cov.mature, cov.words))
+        decks_text = "1 deck" if n_decks == 1 else f"{n_decks} decks"
+        words = "1 word" if s.learned == 1 else f"{s.learned} words"
+        figures = QLabel(f"{words} learned ({s.mature} mature) · {s.learning} in learning · "
+                         f"{decks_text} · {reviews_30} reviews in the last 30 days")
+        figures.setObjectName("muted")
+        figures.setWordWrap(True)
+        v.addWidget(figures)
+
+
+def page_header(title_text: str, back_text: str, on_back) -> tuple[QHBoxLayout, QLabel]:
+    back = QPushButton(back_text)
+    back.setFlat(True)
+    back.clicked.connect(on_back)
+    title = QLabel(title_text)
+    title.setObjectName("title")
+    header = QHBoxLayout()
+    header.addWidget(back)
+    header.addWidget(title)
+    header.addStretch()
+    return header, title
+
+
+class ScrollPage(QWidget):
+    """A page with a fixed header and a scrolling body that is rebuilt by refresh()."""
+
+    def __init__(self, title_text: str, back_text: str, parent=None):
+        super().__init__(parent)
+        header, self.title = page_header(title_text, back_text, self._back)
         self.body = QWidget()
         self.body_layout = QVBoxLayout(self.body)
         self.body_layout.setContentsMargins(0, 0, 8, 0)
@@ -206,85 +257,156 @@ class StatsPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(self.body)
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 16, 24, 16)
         layout.addLayout(header)
         layout.addWidget(scroll, 1)
 
-    def refresh(self) -> None:
-        while self.body_layout.count():
-            item = self.body_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        lay = self.body_layout
+    def _back(self) -> None:
+        self.finished.emit()
 
+    def clear(self) -> QVBoxLayout:
+        while self.body_layout.count():
+            widget = self.body_layout.takeAt(0).widget()
+            if widget is not None:
+                widget.setParent(None)          # gone at once, not only when Qt next idles
+                widget.deleteLater()
+        return self.body_layout
+
+
+def charts(lay: QVBoxLayout, store: Store, corpus: str | None = None) -> None:
+    lay.addWidget(heading("Reviews in the last 30 days"))
+    history = BarChart("reviews")
+    history.set_data(stats.reviews_per_day(store, 30, corpus=corpus))
+    lay.addWidget(history)
+    lay.addWidget(heading("Words due in the next 30 days"))
+    fc = BarChart("words due")
+    fc.set_data(stats.forecast(store, 30, corpus=corpus))
+    lay.addWidget(fc)
+
+
+class StatsPage(ScrollPage):
+    """Overview: your figures, a card per text, and your reviews over the last and next 30 days."""
+
+    finished = Signal()
+    details_requested = Signal(str)     # corpus
+
+    def __init__(self, store: Store, parent=None):
+        super().__init__("Statistics", "← Decks", parent)
+        self.store = store
+        self.cards: list[CorpusCard] = []
+
+    def refresh(self) -> None:
+        lay = self.clear()
         lay.addWidget(overview_tiles(self.store))
 
-        # One section per text you study (the Hebrew Bible if you haven't started yet).
-        for corpus in stats.corpora_with_progress(self.store) or ["bhsa"]:
-            cov = stats.coverage_detail(self.store, corpus)
-            text = CORPUS_TEXT[corpus]
-            lay.addWidget(heading(f"How much of {text} you know"))
-            hero = QLabel(f'<span style="font-size:22pt; font-weight:600;">{100 * cov.share:.1f}%</span> '
-                          f"of all words in {text} belong to words you have learned; "
-                          f'<span style="font-size:22pt; font-weight:600;">{100 * cov.mature_share:.1f}%</span> '
-                          "to mature words.")
-            hero.setWordWrap(True)
-            lay.addWidget(hero)
-            lay.addWidget(legend())
-            books = stats.coverage_by_book(self.store, corpus=corpus)
-            lay.addWidget(progress_table(["Book", "Known words in the text", ""],
-                                         [(b.book, b.mature, b.known - b.mature, b.words)
-                                          for b in books], unit="%"))
+        lay.addWidget(heading("Your texts"))
+        self.cards = [CorpusCard(self.store, c, self.details_requested.emit)
+                      for c in corpora_in_database(self.store)]
+        for card in self.cards:
+            lay.addWidget(card)
+
+        charts(lay, self.store)
+
+        scheduling = QLabel(f"Personal scheduling: {optimize.status(self.store)} "
+                            '<a href="#">Change…</a>')
+        scheduling.setObjectName("muted")
+        scheduling.linkActivated.connect(self.open_scheduling)
+        lay.addSpacing(8)
+        lay.addWidget(scheduling)
+        lay.addStretch()
+
+    def open_scheduling(self, *_):
+        SchedulingDialog(self.store, self).exec()
+        self.refresh()
+
+
+class CorpusStatsPage(ScrollPage):
+    """Detailed statistics for one text: figures, coverage per book, decks, 30-day charts."""
+
+    finished = Signal()
+
+    def __init__(self, store: Store, parent=None):
+        super().__init__("", "← Statistics", parent)
+        self.store = store
+        self.corpus = "bhsa"
+
+    def show_corpus(self, corpus: str) -> None:
+        self.corpus = corpus
+        self.title.setText(CORPORA[corpus])
+        self.refresh()
+
+    def refresh(self) -> None:
+        lay = self.clear()
+        corpus, text = self.corpus, CORPUS_TEXT[self.corpus]
+        lay.addWidget(overview_tiles(self.store, corpus=corpus))
+
+        cov = stats.coverage_detail(self.store, corpus)
+        lay.addWidget(heading(f"How much of {text} you know"))
+        hero = QLabel(f'<span style="font-size:22pt; font-weight:600;">{100 * cov.share:.1f}%</span> '
+                      f"of all words in {text} belong to words you have learned; "
+                      f'<span style="font-size:22pt; font-weight:600;">{100 * cov.mature_share:.1f}%</span> '
+                      "to mature words.")
+        hero.setWordWrap(True)
+        lay.addWidget(hero)
+        lay.addWidget(legend())
+        books = stats.coverage_by_book(self.store, corpus=corpus)
+        lay.addWidget(progress_table(["Book", "Known words in the text", ""],
+                                     [(b.book, b.mature, b.known - b.mature, b.words)
+                                      for b in books], unit="%"))
 
         lay.addWidget(heading("Decks"))
-        progress = [stats.deck_progress(self.store, d) for d in decks.list_decks(self.store)]
+        progress = [stats.deck_progress(self.store, d) for d in decks.list_decks(self.store)
+                    if d.config.corpus == corpus]
         if progress:
             lay.addWidget(progress_table(["Deck", "Words learned", ""],
                                          [(p.name, p.mature, p.young, p.total) for p in progress]))
         else:
-            lay.addWidget(QLabel("No decks yet."))
+            none = QLabel("No decks with this text yet.")
+            none.setObjectName("muted")
+            lay.addWidget(none)
 
-        lay.addWidget(heading("Reviews in the last 30 days"))
-        history = BarChart("reviews")
-        history.set_data(stats.reviews_per_day(self.store, 30))
-        lay.addWidget(history)
+        charts(lay, self.store, corpus)
+        lay.addStretch()
 
-        lay.addWidget(heading("Words due in the next 30 days"))
-        fc = BarChart("words due")
-        fc.set_data(stats.forecast(self.store, 30))
-        lay.addWidget(fc)
 
-        lay.addWidget(heading("Personal scheduling"))
+class SchedulingDialog(QDialog):
+    """Fitting FSRS to the user's own answers (or going back to the defaults)."""
+
+    def __init__(self, store: Store, parent=None):
+        super().__init__(parent)
+        self.store = store
+        self._thread: QThread | None = None
+        self.setWindowTitle("Personal scheduling")
+        self.setMinimumWidth(480)
         explain = QLabel(
             "FSRS can be fitted to your own answers, so that intervals match how quickly "
             f"<i>you</i> forget. This needs at least {optimize.MIN_REVIEWS} reviews; the "
             "fitted parameters are only used if they predict your answers better.")
         explain.setWordWrap(True)
-        explain.setObjectName("muted")
-        lay.addWidget(explain)
-        self.fit_status = QLabel(optimize.status(self.store))
-        lay.addWidget(self.fit_status)
-        buttons = QHBoxLayout()
+        self.fit_status = QLabel(optimize.status(store))
+        self.fit_status.setWordWrap(True)
         self.fit_btn = QPushButton("Fit to my answers")
-        n = optimize.total_reviews(self.store)
+        n = optimize.total_reviews(store)
         self.fit_btn.setEnabled(n >= optimize.MIN_REVIEWS)
         if n < optimize.MIN_REVIEWS:
             self.fit_btn.setToolTip(f"{n} of {optimize.MIN_REVIEWS} reviews so far.")
         self.fit_btn.clicked.connect(self.fit)
-        reset = QPushButton("Use default parameters")
-        reset.setEnabled(fsrs_parameters(self.store) is not None)
-        reset.clicked.connect(self.reset_parameters)
-        buttons.addWidget(self.fit_btn)
-        buttons.addWidget(reset)
-        buttons.addStretch()
-        row = QWidget()
-        row.setLayout(buttons)
-        lay.addWidget(row)
-        lay.addStretch()
+        self.reset_btn = QPushButton("Use default parameters")
+        self.reset_btn.setEnabled(fsrs_parameters(store) is not None)
+        self.reset_btn.clicked.connect(self.reset_parameters)
+        close = QDialogButtonBox(QDialogButtonBox.Close)
+        close.rejected.connect(self.reject)
+        row = QHBoxLayout()
+        row.addWidget(self.fit_btn)
+        row.addWidget(self.reset_btn)
+        row.addStretch()
+        layout = QVBoxLayout(self)
+        layout.addWidget(explain)
+        layout.addWidget(self.fit_status)
+        layout.addLayout(row)
+        layout.addWidget(close)
 
-    # --- FSRS fitting ------------------------------------------------------------
     def fit(self) -> None:
         data = optimize.training_data(self.store)
         self.fit_btn.setEnabled(False)
@@ -303,8 +425,10 @@ class StatsPage(QWidget):
         else:
             optimize.apply(self.store, result)
             QMessageBox.information(self, "Personal scheduling", result.message)
-        self.refresh()
+        self.fit_status.setText(optimize.status(self.store))
+        self.reset_btn.setEnabled(fsrs_parameters(self.store) is not None)
 
     def reset_parameters(self) -> None:
         optimize.reset(self.store)
-        self.refresh()
+        self.fit_status.setText(optimize.status(self.store))
+        self.reset_btn.setEnabled(False)

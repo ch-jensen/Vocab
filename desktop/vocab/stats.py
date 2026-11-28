@@ -39,10 +39,23 @@ def is_mature(last_review: str | None, due: str, tz: tzinfo | None = None) -> bo
     return interval_days(last_review, due, tz) >= MATURE_DAYS
 
 
-def _maturity(store: Store, tz: tzinfo | None = None) -> dict[tuple[str, str], bool]:
-    """(lex_id, stem) of every learned word -> mature?"""
+def _in_corpus(corpus: str | None, column: str = "lex_id") -> tuple[str, tuple]:
+    """SQL condition limiting cards (by lex_id) or reviews (by card_id) to a corpus."""
+    if corpus is None:
+        return "1", ()
+    lexemes = "SELECT lex_id FROM bhsa.lexemes WHERE corpus = ?"
+    if column == "card_id":
+        return f"card_id IN (SELECT card_id FROM cards WHERE lex_id IN ({lexemes}))", (corpus,)
+    return f"lex_id IN ({lexemes})", (corpus,)
+
+
+def _maturity(store: Store, tz: tzinfo | None = None,
+              corpus: str | None = None) -> dict[tuple[str, str], bool]:
+    """(lex_id, stem) of every learned word (of a corpus, or all) -> mature?"""
+    where, params = _in_corpus(corpus)
     return {(r[0], r[1]): is_mature(r[2], r[3], tz) for r in store.con.execute(
-        "SELECT lex_id, stem, last_review, due FROM cards WHERE state = ?", (int(State.Review),))}
+        f"SELECT lex_id, stem, last_review, due FROM cards WHERE state = ? AND {where}",
+        (int(State.Review), *params))}
 
 
 @dataclass
@@ -59,16 +72,22 @@ class Summary:
     streak_days: int              # consecutive study days up to today (or yesterday)
 
 
-def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None) -> Summary:
+def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None, *,
+            corpus: str | None = None) -> Summary:
+    """Overview figures for all your words, or for one corpus ('bhsa', 'n1904')."""
     now = now or datetime.now(timezone.utc)
     con = store.con
-    maturity = _maturity(store, tz)
+    maturity = _maturity(store, tz, corpus)
     mature = sum(maturity.values())
     learned = len(maturity)
-    learning = con.execute("SELECT COUNT(*) FROM cards WHERE state IN (1, 3)").fetchone()[0]
-    total = con.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
-    today = con.execute("SELECT COUNT(*) FROM reviews WHERE reviewed_at >= ?",
-                        (ts(day_start(now, tz)),)).fetchone()[0]
+    cards_where, cards_params = _in_corpus(corpus)
+    reviews_where, reviews_params = _in_corpus(corpus, "card_id")
+    learning = con.execute(f"SELECT COUNT(*) FROM cards WHERE state IN (1, 3) AND {cards_where}",
+                           cards_params).fetchone()[0]
+    total = con.execute(f"SELECT COUNT(*) FROM reviews WHERE {reviews_where}",
+                        reviews_params).fetchone()[0]
+    today = con.execute(f"SELECT COUNT(*) FROM reviews WHERE reviewed_at >= ? AND {reviews_where}",
+                        (ts(day_start(now, tz)), *reviews_params)).fetchone()[0]
 
     # Retention over the last 30 days, split like Anki by the interval before the
     # review: a review is "mature" if the word had gone 21 days or more since its
@@ -78,8 +97,8 @@ def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None)
     tally = {False: [0, 0], True: [0, 0]}       # mature? -> [reviews, remembered]
     previous: dict[int, str] = {}
     for card_id, at, rating, state_before in con.execute(
-            "SELECT card_id, reviewed_at, rating, state_before FROM reviews "
-            "ORDER BY card_id, reviewed_at, review_id"):
+            f"SELECT card_id, reviewed_at, rating, state_before FROM reviews WHERE {reviews_where} "
+            "ORDER BY card_id, reviewed_at, review_id", reviews_params):
         if state_before == State.Review and at >= since:
             prev = previous.get(card_id)
             was_mature = bool(prev) and (study_day(parse_ts(at), tz)
@@ -92,7 +111,8 @@ def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None)
 
     def share(t):
         return t[1] / t[0] if t[0] else None
-    days = {study_day(parse_ts(r[0]), tz) for r in con.execute("SELECT reviewed_at FROM reviews")}
+    days = {study_day(parse_ts(r[0]), tz) for r in con.execute(
+        f"SELECT reviewed_at FROM reviews WHERE {reviews_where}", reviews_params)}
     streak, day = 0, study_day(now, tz)
     if day not in days:
         day -= timedelta(days=1)          # not studied yet today: count up to yesterday
@@ -104,14 +124,16 @@ def summary(store: Store, now: datetime | None = None, tz: tzinfo | None = None)
 
 
 def reviews_per_day(store: Store, days: int = 30, now: datetime | None = None,
-                    tz: tzinfo | None = None) -> list[tuple[date, int]]:
+                    tz: tzinfo | None = None, *, corpus: str | None = None) -> list[tuple[date, int]]:
     """Number of reviews on each of the last `days` study days, oldest first."""
+    where, params = _in_corpus(corpus, "card_id")
     now = now or datetime.now(timezone.utc)
     last = study_day(now, tz)
     first = last - timedelta(days=days - 1)
     counts = {first + timedelta(days=i): 0 for i in range(days)}
     since = ts(day_start(now, tz) - timedelta(days=days - 1))
-    for (at,) in store.con.execute("SELECT reviewed_at FROM reviews WHERE reviewed_at >= ?", (since,)):
+    for (at,) in store.con.execute(f"SELECT reviewed_at FROM reviews WHERE reviewed_at >= ? AND {where}",
+                                   (since, *params)):
         d = study_day(parse_ts(at), tz)
         if d in counts:
             counts[d] += 1
@@ -119,12 +141,14 @@ def reviews_per_day(store: Store, days: int = 30, now: datetime | None = None,
 
 
 def forecast(store: Store, days: int = 30, now: datetime | None = None,
-             tz: tzinfo | None = None) -> list[tuple[date, int]]:
+             tz: tzinfo | None = None, *, corpus: str | None = None) -> list[tuple[date, int]]:
     """Learned words falling due on each of the next `days` study days (overdue ones today)."""
+    where, params = _in_corpus(corpus)
     now = now or datetime.now(timezone.utc)
     today = study_day(now, tz)
     counts = {today + timedelta(days=i): 0 for i in range(days)}
-    for (due,) in store.con.execute("SELECT due FROM cards WHERE state = ?", (int(State.Review),)):
+    for (due,) in store.con.execute(f"SELECT due FROM cards WHERE state = ? AND {where}",
+                                    (int(State.Review), *params)):
         d = max(study_day(parse_ts(due), tz), today)
         if d in counts:
             counts[d] += 1

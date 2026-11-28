@@ -20,7 +20,7 @@ from ..migrate import import_score_csv
 from ..store import APP_ROOT, Store
 from .about import AboutDialog
 from .home import HomePage
-from .stats_page import StatsPage
+from .stats_page import CorpusStatsPage, StatsPage
 from .study import StudyPage
 
 # The base font size is set with QApplication.setFont, not here: a font size in
@@ -79,6 +79,10 @@ class MainWindow(QMainWindow):
         self.stats = StatsPage(store)
         self.pages.addWidget(self.stats)
         self.stats.finished.connect(self.show_home)
+        self.corpus_stats = CorpusStatsPage(store)
+        self.pages.addWidget(self.corpus_stats)
+        self.stats.details_requested.connect(self.show_corpus_stats)
+        self.corpus_stats.finished.connect(self.show_stats)
         self.home.stats_requested.connect(self.show_stats)
         self.setCentralWidget(self.pages)
 
@@ -118,6 +122,10 @@ class MainWindow(QMainWindow):
     def show_home(self) -> None:
         self.home.refresh()
         self.pages.setCurrentWidget(self.home)
+
+    def show_corpus_stats(self, corpus: str) -> None:
+        self.corpus_stats.show_corpus(corpus)
+        self.pages.setCurrentWidget(self.corpus_stats)
 
     def show_stats(self) -> None:
         self.stats.refresh()

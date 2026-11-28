@@ -237,7 +237,8 @@ def test_stats_page(app, store):
     texts = " ".join(w.text() for w in win.stats.body.findChildren(type(win.study.feedback)))
     assert "0 mature words" in texts and "1 young words" in texts   # a new word just graduated
     assert "% " in texts or "%</span>" in texts           # coverage hero
-    assert not win.stats.fit_btn.isEnabled()                 # too few reviews to fit
+    from vocab.gui.stats_page import SchedulingDialog
+    assert not SchedulingDialog(store).fit_btn.isEnabled()    # too few reviews to fit
 
 
 def test_gloss_dialog_from_study(app, store):
@@ -429,3 +430,47 @@ def test_study_greek_left_to_right(app, store):
     assert "Greek" in page.clause.font().families()[0] or "SBL Greek" in page.clause.font().families()
     page._enter()                                       # show answer and facts
     assert "New Testament" in page.facts.text()
+
+
+def test_stats_overview_and_details(app, store):
+    from fsrs import Rating
+    from PySide6.QtWidgets import QLabel
+    from vocab.gui.app import MainWindow
+    greek = decks.create_deck(store, "NT", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                      languages=["Greek"], new_per_day=2))
+    win = MainWindow(store)
+    win.start_study(greek)
+    win.study.session.rate(win.study.item, Rating.Easy)         # ὁ learned
+    win.show_stats()
+    cards = {c.corpus: c for c in win.stats.cards}
+    assert set(cards) == {"bhsa", "n1904"}
+    hebrew_text = " ".join(l.text() for l in cards["bhsa"].findChildren(QLabel))
+    assert "Not started yet" in hebrew_text
+    greek_text = " ".join(l.text() for l in cards["n1904"].findChildren(QLabel))
+    assert "of the text learned" in greek_text and "1 word learned" in greek_text and "1 deck" in greek_text
+    # The overview has no per-book table; the details do.
+    assert "Genesis" not in " ".join(l.text() for l in win.stats.body.findChildren(QLabel))
+    cards["n1904"].details.click()
+    assert win.pages.currentWidget() is win.corpus_stats
+    assert win.corpus_stats.title.text() == "Greek New Testament (Nestle 1904)"
+    from PySide6.QtWidgets import QTableWidget
+    tables = win.corpus_stats.body.findChildren(QTableWidget)
+    assert tables[0].item(0, 0).text() == "Matthew" and tables[0].rowCount() == 27
+    assert tables[1].item(0, 0).text() == "NT"                   # only this text's decks
+    win.corpus_stats.finished.emit()                              # ← Statistics
+    assert win.pages.currentWidget() is win.stats
+
+
+def test_stats_per_corpus_engine(store):
+    from datetime import datetime, timezone
+    from vocab import stats
+    for lex in ("grc:καί", "hbo:W"):
+        store.con.execute("INSERT INTO cards (lex_id, stem, state, due, last_review, created_at) "
+                          "VALUES (?, '*', 2, '2030-01-01T04:00:00.000+00:00', "
+                          "'2029-12-01T04:00:00.000+00:00', '2026-01-01T00:00:00.000+00:00')", (lex,))
+    store.con.commit()
+    now = datetime(2029, 12, 15, tzinfo=timezone.utc)
+    assert stats.summary(store, now).learned == 2
+    assert stats.summary(store, now, corpus="n1904").learned == 1
+    assert stats.summary(store, now, corpus="n1904").mature == 1          # 31-day interval
+    assert sum(n for _, n in stats.forecast(store, 30, now, corpus="bhsa")) == 1
