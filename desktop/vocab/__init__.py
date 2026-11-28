@@ -1,3 +1,3 @@
 """Vocabulary engine for Biblical Hebrew and Aramaic: decks, occurrences and FSRS scheduling."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
