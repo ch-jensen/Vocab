@@ -380,24 +380,25 @@ def test_current_group_underlined(app, store):
     assert page.item is not None and page.counts.current() == "learning"
 
 
-def test_overview_tiles_on_deck_list(app, store):
+def test_streak_and_week_bar_on_deck_list(app, store):
     from fsrs import Rating
-    from PySide6.QtWidgets import QLabel
     from vocab.gui.app import MainWindow
+    from vocab.gui.home import ProgressBarStrip
     deck = decks.create_deck(store, "O", DeckConfig(plan_id="hebrew-frequency", new_per_day=2))
     win = MainWindow(store)
-
-    def texts():
-        return " ".join(l.text() for l in win.home.overview.findChildren(QLabel))
-    assert "mature words" in texts() and "0 reviews today" in texts()
-    assert "0" in texts() and "reviews today" in texts() and "study streak" in texts()
+    bar = win.home.overview
+    assert isinstance(bar, ProgressBarStrip)
+    assert "0</span> days study streak" in bar.streak.text()
+    assert len(bar.chart.data) == 7 and sum(n for _, n in bar.chart.data) == 0
     win.start_study(deck)
-    win.study.session.rate(win.study.item, Rating.Easy)     # one review, one learned word
+    win.study.session.rate(win.study.item, Rating.Easy)     # one review today
     win.show_home()                                          # back on the deck list: refreshed
-    labels = [l.text() for l in win.home.overview.findChildren(QLabel)]
-    assert labels[labels.index("reviews today") - 1] == "1"
-    assert labels[labels.index("young words") - 1] == "1"
-    assert len(win.home.findChildren(type(win.home.overview), "overview")) == 1   # no duplicates
+    bar = win.home.overview
+    assert "1</span> day study streak" in bar.streak.text()
+    assert bar.chart.data[-1][1] == 1 and ">1</span>" in bar.week_label.text()
+    assert len(win.home.findChildren(ProgressBarStrip)) == 1      # no duplicates
+    bar.stats_btn.click()                                     # Statistics › opens the statistics
+    assert win.pages.currentWidget() is win.stats
 
 
 def test_deck_editor_greek(app, store):

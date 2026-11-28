@@ -12,7 +12,8 @@ from ..store import Store
 from .common import BAD, GOOD, MUTED
 from .counts import DUE_TIP, LEARNING_TIP, NEW_TIP, learning_text
 from .deck_editor import DeckEditor
-from .stats_page import StackedBar, overview_tiles
+from .charts import WeekBars
+from .stats_page import StackedBar
 
 # A soft colour per language for the deck's language label: (background, text).
 LANGUAGE_COLOURS = {"Hebrew": ("#fbefd9", "#7a4e0c"), "Aramaic": ("#efe8f8", "#563a86"),
@@ -28,6 +29,42 @@ def language_pill(text: str) -> QLabel:
                        "padding: 1px 9px; font-size: 9.5pt; }}")
     pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
     return pill
+
+
+class ProgressBarStrip(QFrame):
+    """The bar at the top of the front page: study streak, reviews over the last
+    7 days, and a button to the statistics."""
+
+    def __init__(self, store: Store, on_stats, parent=None):
+        super().__init__(parent)
+        self.setObjectName("tileCompact")
+        s = stats.summary(store)
+        week = stats.reviews_per_day(store, 7)
+
+        self.streak = QLabel(f'<span style="font-size:14pt; font-weight:600;">{s.streak_days}</span>'
+                             f' {"day" if s.streak_days == 1 else "days"} study streak')
+        self.streak.setToolTip("Days in a row with at least one review.")
+        self.chart = WeekBars("reviews")
+        self.chart.set_data(week)
+        total = sum(n for _, n in week)
+        self.week_label = QLabel(f'Reviews, last 7 days<br><span style="color:#1a202c; font-size:14pt; '
+                                 f'font-weight:600;">{total}</span>')
+        self.week_label.setObjectName("muted")
+        self.stats_btn = QPushButton("Statistics ›")
+        self.stats_btn.clicked.connect(on_stats)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.VLine)
+        line.setObjectName("rule")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 6, 10, 6)
+        row.setSpacing(14)
+        row.addWidget(self.streak)
+        row.addWidget(line)
+        row.addWidget(self.week_label)
+        row.addWidget(self.chart)
+        row.addStretch()
+        row.addWidget(self.stats_btn)
 
 
 class DeckCard(QFrame):
@@ -170,9 +207,6 @@ class HomePage(QWidget):
         import_btn.clicked.connect(self.import_deck)
 
         buttons = QHBoxLayout()
-        stats_btn = QPushButton("Statistics")
-        stats_btn.clicked.connect(self.stats_requested.emit)
-        buttons.addWidget(stats_btn)
         buttons.addStretch()
         buttons.addWidget(new_btn)
         buttons.addWidget(self.edit_btn)
@@ -233,7 +267,7 @@ class HomePage(QWidget):
             if old is not None:
                 old.setParent(None)          # gone at once, not only when Qt next idles
                 old.deleteLater()
-        self.overview = overview_tiles(self.store, compact=True)
+        self.overview = ProgressBarStrip(self.store, self.stats_requested.emit)
         self.overview_box.addWidget(self.overview)
         self._update_buttons()
 
