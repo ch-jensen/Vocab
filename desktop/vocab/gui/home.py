@@ -16,15 +16,13 @@ from .deck_editor import DeckEditor
 from .charts import WeekBars
 from .stats_page import StackedBar
 
-# A soft colour per language for the deck's language label: (background, text).
-LANGUAGE_COLOURS = {"Hebrew": ("#fbefd9", "#7a4e0c"), "Aramaic": ("#efe8f8", "#563a86"),
-                    "Greek": ("#e3eefb", "#1d5aa6")}
+# A soft colour per corpus for the deck's corpus label: (background, text).
+CORPUS_COLOURS = {"bhsa": ("#fbefd9", "#7a4e0c"), "n1904": ("#e3eefb", "#1d5aa6")}
 
 
-def language_pill(text: str) -> QLabel:
-    first = text.split(" and ")[0]
-    bg, fg = LANGUAGE_COLOURS.get(first, ("#edf2f7", "#4a5568"))
-    pill = QLabel(text)
+def corpus_pill(corpus: str) -> QLabel:
+    bg, fg = CORPUS_COLOURS.get(corpus, ("#edf2f7", "#4a5568"))
+    pill = QLabel(decks.CORPUS_LABELS.get(corpus, corpus))
     pill.setObjectName("pill")
     pill.setStyleSheet(f"QLabel#pill {{ background: {bg}; color: {fg}; border-radius: 9px; "
                        "padding: 1px 9px; font-size: 9.5pt; }}")
@@ -119,7 +117,7 @@ class NewDeckCard(QFrame):
 
 
 class DeckCard(QFrame):
-    """One deck: name, language, progress, today's counts and a Study button."""
+    """One deck: name, corpus, progress, today's counts and a Study button."""
 
     clicked = Signal(object)          # DeckCard
     study = Signal(object)            # Deck
@@ -143,12 +141,13 @@ class DeckCard(QFrame):
 
         self.name = QLabel(deck.name)
         self.name.setObjectName("deckName")
-        pill = language_pill(self.language)
-        pill.setToolTip(decks.CORPORA[deck.config.corpus])
+        self.corpus = deck.config.corpus
+        self.pill = corpus_pill(self.corpus)
+        self.pill.setToolTip(f"{decks.CORPORA[self.corpus]} · {self.language}")
         top = QHBoxLayout()
         top.setSpacing(10)
         top.addWidget(self.name)
-        top.addWidget(pill)
+        top.addWidget(self.pill)
         top.addStretch()
 
         self.details = QLabel(f"{progress.total} words · {progress.learned} learned "

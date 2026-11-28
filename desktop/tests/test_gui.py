@@ -36,6 +36,7 @@ def test_home_lists_decks(app, store):
     assert len(win.home.cards) == 1
     card = win.home.cards[0]
     assert card.name.text() == "Frequency" and card.language == "Hebrew"
+    assert card.pill.text() == "Hebrew Bible" and "Hebrew" in card.pill.toolTip()
     assert card.figures["new"].text() == "10"
 
 
@@ -492,6 +493,7 @@ def test_deck_cards_select_and_study(app, store):
     home = win.home
     assert [c.deck.name for c in home.cards] == ["A Hebrew", "B Greek"]
     assert [c.language for c in home.cards] == ["Hebrew", "Greek"]
+    assert [c.pill.text() for c in home.cards] == ["Hebrew Bible", "Greek NT"]
     assert home.selected_deck().name == "A Hebrew" and home.cards[0].property("selected")
     QTest.mouseClick(home.cards[1], Qt.LeftButton)              # click a card: selects it
     assert home.selected_deck().name == "B Greek"

@@ -31,6 +31,8 @@ ALL_STEMS = "*"   # card stem for a whole-lexeme card
 
 # The corpora in the database, with the languages each contains.
 CORPORA = {"bhsa": "Hebrew Bible (BHSA)", "n1904": "Greek New Testament (Nestle 1904)"}
+# Short names for labels, e.g. on the deck cards.
+CORPUS_LABELS = {"bhsa": "Hebrew Bible", "n1904": "Greek NT"}
 CORPUS_LANGUAGES = {"bhsa": ["Hebrew", "Aramaic"], "n1904": ["Greek"]}
 RTL_LANGUAGES = {"Hebrew", "Aramaic"}
 
