@@ -529,3 +529,24 @@ def test_study_button_disabled_when_nothing_to_study(app, store):
     assert win.pages.currentWidget() is home
     QTest.mouseDClick(finished, Qt.LeftButton)   # nor does a double-click
     assert win.pages.currentWidget() is home
+
+
+def test_new_deck_card(app, store, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from vocab.gui import home as home_mod
+    from vocab.gui.app import MainWindow
+    opened = []
+    monkeypatch.setattr(home_mod.DeckEditor, "exec", lambda self: opened.append(self) or 0)
+    win = MainWindow(store)
+    home = win.home
+    assert home.cards == [] and home.new_card.isVisibleTo(home)          # no decks: just the card
+    from PySide6.QtWidgets import QLabel
+    assert "most common words" in " ".join(l.text() for l in home.new_card.findChildren(QLabel))
+    QTest.mouseClick(home.new_card, Qt.LeftButton)                       # opens the deck editor
+    assert len(opened) == 1 and opened[0].windowTitle() == "New deck"
+    decks.create_deck(store, "D", DeckConfig(plan_id="hebrew-frequency"))
+    home.refresh()
+    layout = home.cards_layout
+    assert layout.itemAt(0).widget() is home.cards[0] and layout.itemAt(1).widget() is home.new_card
+    assert not [b for b in home.findChildren(type(home.edit_btn)) if b.text() == "New deck…"]

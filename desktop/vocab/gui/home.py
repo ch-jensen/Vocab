@@ -80,6 +80,43 @@ class ProgressBarStrip(QFrame):
         row.addWidget(self.stats_btn)
 
 
+class NewDeckCard(QFrame):
+    """The last card in the deck list: a dashed card with a plus to make a new deck."""
+
+    clicked = Signal()
+
+    def __init__(self, first: bool = False, parent=None):
+        super().__init__(parent)
+        self.setObjectName("newDeckCard")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Make a new deck")
+        plus = QLabel("+")
+        plus.setObjectName("newDeckPlus")
+        plus.setAlignment(Qt.AlignCenter)
+        plus.setFixedSize(34, 34)
+        title = QLabel("New deck…")
+        title.setObjectName("deckName")
+        hint = QLabel("Start with the most common words of the Hebrew Bible or the Greek New "
+                      "Testament, or make your own selection." if first else
+                      "Choose a text and a plan, or make your own selection.")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        text.addWidget(title)
+        text.addWidget(hint)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(16, 10, 16, 10)
+        row.setSpacing(14)
+        row.addWidget(plus)
+        row.addLayout(text, 1)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class DeckCard(QFrame):
     """One deck: name, language, progress, today's counts and a Study button."""
 
@@ -204,8 +241,6 @@ class HomePage(QWidget):
         self.scroll.setWidget(self.deck_list)
         self.setFocusPolicy(Qt.StrongFocus)
 
-        new_btn = QPushButton("New deck…")
-        new_btn.clicked.connect(self.new_deck)
         self.edit_btn = QPushButton("Edit…")
         self.edit_btn.clicked.connect(self.edit_deck)
         self.delete_btn = QPushButton("Delete")
@@ -219,7 +254,6 @@ class HomePage(QWidget):
 
         buttons = QHBoxLayout()
         buttons.addStretch()
-        buttons.addWidget(new_btn)
         buttons.addWidget(self.edit_btn)
         buttons.addWidget(self.delete_btn)
         buttons.addSpacing(12)
@@ -258,13 +292,15 @@ class HomePage(QWidget):
             card.study.connect(self.study_requested.emit)
             self.cards_layout.addWidget(card)
             self.cards.append(card)
+        self.new_card = NewDeckCard(first=not self._decks)
+        self.new_card.clicked.connect(self.new_deck)
+        self.cards_layout.addWidget(self.new_card)
         self.cards_layout.addStretch()
         self._selected = None
         if self._decks:
             self._select(next((i for i, d in enumerate(self._decks)
                                if selected and d.deck_id == selected.deck_id), 0))
-        self.scroll.setVisible(bool(self._decks))
-        self.empty.setVisible(not self._decks)
+        self.empty.setVisible(False)
 
         while self.overview_box.count():
             old = self.overview_box.takeAt(0).widget()

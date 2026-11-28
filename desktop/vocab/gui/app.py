@@ -46,6 +46,10 @@ QFrame#deckCard { background: #ffffff; border: 1px solid #e2e8f0; border-radius:
 QFrame#deckCard:hover { border-color: #d6b37a; }
 QFrame#deckCard[selected="true"] { border: 2px solid #b7791f; background: #fffaf0; }
 QLabel#deckName { font-size: 13.5pt; font-weight: 600; }
+QFrame#newDeckCard { background: transparent; border: 2px dashed #cbd5e0; border-radius: 10px; }
+QFrame#newDeckCard:hover { border-color: #b7791f; background: #fffaf0; }
+QLabel#newDeckPlus { background: #b7791f; color: #ffffff; border-radius: 17px;
+                     font-size: 18pt; font-weight: 600; }
 QLabel#deckFigure { font-size: 15pt; font-weight: 600; }
 QPushButton#primary { background: #b7791f; color: #ffffff; border: 1px solid #b7791f; font-weight: 600; }
 QPushButton#primary:hover { background: #9c6519; }
