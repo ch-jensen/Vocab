@@ -42,6 +42,13 @@ QProgressBar { background: #e8e7e2; border: none; border-radius: 5px; }
 QProgressBar::chunk { background: #2a78d6; border-radius: 5px; }
 QFrame#tile { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; }
 QLabel#tileValue { font-size: 20pt; font-weight: 600; }
+QFrame#deckCard { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; }
+QFrame#deckCard:hover { border-color: #d6b37a; }
+QFrame#deckCard[selected="true"] { border: 2px solid #b7791f; background: #fffaf0; }
+QLabel#deckName { font-size: 13.5pt; font-weight: 600; }
+QLabel#deckFigure { font-size: 15pt; font-weight: 600; }
+QPushButton#primary { background: #b7791f; color: #ffffff; border: 1px solid #b7791f; font-weight: 600; }
+QPushButton#primary:hover { background: #9c6519; }
 QFrame#tileCompact { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; }
 QLabel#tileValueCompact { font-size: 12pt; font-weight: 600; }
 QTableWidget { font-size: 12pt; selection-background-color: #fbe3b0; selection-color: #1a202c; }

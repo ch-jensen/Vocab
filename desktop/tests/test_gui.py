@@ -33,10 +33,10 @@ def test_home_lists_decks(app, store):
     from vocab.gui.app import MainWindow
     decks.create_deck(store, "Frequency", DeckConfig(plan_id="hebrew-frequency"))
     win = MainWindow(store)
-    assert win.home.table.rowCount() == 1
-    assert win.home.table.item(0, 0).text() == "Frequency"
-    assert win.home.table.item(0, 1).text() == "Hebrew"
-    assert win.home.table.item(0, 2).text() == "10"
+    assert len(win.home.cards) == 1
+    card = win.home.cards[0]
+    assert card.name.text() == "Frequency" and card.language == "Hebrew"
+    assert card.figures["new"].text() == "10"
 
 
 def test_typed_study_flow(app, store):
@@ -223,8 +223,8 @@ def test_counts_bar_and_tooltips(app, store):
     assert bar.new.text() == "2 new"
     assert "later today" in bar.learning.toolTip() and bar.due.toolTip()
     win.show_home()
-    assert win.home.table.item(0, 3).text() == "0 (+1)"
-    assert win.home.table.horizontalHeaderItem(3).toolTip() == bar.learning.toolTip()
+    assert win.home.cards[0].figures["learning"].text() == "0 (+1)"
+    assert win.home.cards[0].figures["learning"].toolTip() == bar.learning.toolTip()
 
 
 def test_stats_page(app, store):
@@ -286,7 +286,7 @@ def test_export_and_import_deck_from_home(app, store, tmp_path, monkeypatch):
     assert path.exists() and "progress is not included" in shown[-1]
     result = win.home.import_deck_file(str(path))
     assert result.deck.name == "Jonah (2)"
-    assert win.home.table.rowCount() == 2
+    assert len(win.home.cards) == 2
     assert win.home.selected_deck().name == "Jonah (2)"
     bad = tmp_path / "bad.vocabdeck"
     bad.write_text("{}", encoding="utf-8")
@@ -475,3 +475,27 @@ def test_stats_per_corpus_engine(store):
     assert stats.summary(store, now, corpus="n1904").learned == 1
     assert stats.summary(store, now, corpus="n1904").mature == 1          # 31-day interval
     assert sum(n for _, n in stats.forecast(store, 30, now, corpus="bhsa")) == 1
+
+
+def test_deck_cards_select_and_study(app, store):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from vocab.gui.app import MainWindow
+    decks.create_deck(store, "A Hebrew", DeckConfig(plan_id="hebrew-frequency"))
+    decks.create_deck(store, "B Greek", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                   languages=["Greek"]))
+    win = MainWindow(store)
+    home = win.home
+    assert [c.deck.name for c in home.cards] == ["A Hebrew", "B Greek"]
+    assert [c.language for c in home.cards] == ["Hebrew", "Greek"]
+    assert home.selected_deck().name == "A Hebrew" and home.cards[0].property("selected")
+    QTest.mouseClick(home.cards[1], Qt.LeftButton)              # click a card: selects it
+    assert home.selected_deck().name == "B Greek"
+    assert home.cards[1].property("selected") and not home.cards[0].property("selected")
+    QTest.keyClick(home, Qt.Key_Up)                              # arrow keys move the selection
+    assert home.selected_deck().name == "A Hebrew"
+    home.cards[1].study_btn.click()                              # Study › on a card studies that deck
+    assert win.pages.currentWidget() is win.study and win.study.deck_label.text() == "B Greek"
+    win.show_home()
+    QTest.keyClick(home, Qt.Key_Return)                          # Enter studies the selected deck
+    assert win.study.deck_label.text() == "A Hebrew"
