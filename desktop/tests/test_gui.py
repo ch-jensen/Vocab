@@ -396,3 +396,36 @@ def test_overview_tiles_on_deck_list(app, store):
     assert labels[labels.index("reviews today") - 1] == "1"
     assert labels[labels.index("young words") - 1] == "1"
     assert len(win.home.findChildren(type(win.home.overview), "overview")) == 1   # no duplicates
+
+
+def test_deck_editor_greek(app, store):
+    from vocab.gui.deck_editor import DeckEditor
+    dlg = DeckEditor(store, None)
+    dlg.corpus.setCurrentIndex(dlg.corpus.findData("n1904"))
+    assert dlg.plan.currentData() == "greek-frequency"
+    assert dlg.voices.count() > 0 and dlg.moods.count() > 0 and dlg.stems.count() == 0
+    assert dlg.books._books[0][1] == "Matthew"
+    assert "Swahili" in [dlg.gloss.itemText(i) for i in range(dlg.gloss.count())]
+    dlg.gloss.setCurrentText("Danish")
+    dlg.name.setText("NT Greek")
+    cfg = dlg.config()
+    assert (cfg.corpus, cfg.plan_id, cfg.languages, cfg.gloss_language) == \
+        ("n1904", "greek-frequency", ["Greek"], "Danish")
+    dlg.save()
+    saved = decks.get_deck(store, "NT Greek")
+    again = DeckEditor(store, saved)
+    assert again.config() == saved.config and not again.corpus.isEnabled()
+
+
+def test_study_greek_left_to_right(app, store):
+    from vocab.gui.app import MainWindow
+    from vocab.gui.study import clause_html
+    deck = decks.create_deck(store, "G", DeckConfig(corpus="n1904", plan_id="greek-frequency",
+                                                    languages=["Greek"], answer_mode="self"))
+    win = MainWindow(store)
+    win.start_study(deck)
+    page = win.study
+    assert 'dir="ltr"' in clause_html(page.item)
+    assert "Greek" in page.clause.font().families()[0] or "SBL Greek" in page.clause.font().families()
+    page._enter()                                       # show answer and facts
+    assert "New Testament" in page.facts.text()

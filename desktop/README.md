@@ -201,3 +201,30 @@ Settings → Privacy & Security → *Open Anyway*). Notarization needs an Apple 
 
 **Not yet tested on a real Mac.** The workflow builds, tests and self-tests the app on Apple's
 runners, but the app hasn't been opened by hand on a Mac yet.
+
+# Greek New Testament
+
+The database (schema 2) holds two corpora, built by `build_db.py`:
+
+| Corpus | Source | Licence |
+|---|---|---|
+| `bhsa` | BHSA 2021 (ETCBC), Hebrew and Aramaic | CC BY-NC 4.0 |
+| `n1904` | Nestle 1904 Greek NT, Text-Fabric edition [N1904](https://github.com/CenterBLC/N1904) 1.0.0 (CBLC/ETCBC), based on [MACULA Greek](https://github.com/Clear-Bible/macula-greek) | MIT; MACULA CC BY 4.0 |
+
+* **Glosses** for Greek come from [Bible Online Learner](https://github.com/EzerIT/BibleOL)
+  (Ezer IT Consulting), used with permission. The files are kept unchanged in `sources/bibleol/`
+  (commit in `SOURCE.txt`) and linked to N1904 by Strong's number, preferring the entry whose lexeme
+  is the lemma: every Greek lemma gets a gloss in Danish, English and Dutch, nearly all in Portuguese
+  and Swahili, and the frequent ones in Spanish (Amharic is empty in the source and left out).
+* **Corrections** to glosses from the sources go in `sources/gloss_corrections.csv` (with a note
+  why), applied after the sources.
+* **Numbering:** Greek words, verses and sentences get node ids from 10,000,000 and books
+  `book_order` from 101, so the two corpora never collide and every book is still one contiguous
+  range of words. Lexemes are `grc:<lemma>` (NFC).
+* **Context:** each Greek word records the range of words shown with it (`ctx_from`, `ctx_to`): the
+  smallest clause with 4–30 words, otherwise the sentence or a 30-word window of it.
+* **Decks** have a `corpus` (`bhsa` or `n1904`). Greek decks filter by tense, voice and mood (verbs
+  only); Hebrew decks by stem, tense and suffix. Proper nouns get `sp = 'nmpr'` as in the BHSA.
+
+To rebuild, Text-Fabric needs N1904 once: `from tf.app import use; use('CenterBLC/N1904')`.
+`python build_db.py --no-n1904` builds the Hebrew Bible only.

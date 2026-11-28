@@ -1,5 +1,5 @@
-Vocab: vocabulary training for Biblical Hebrew and Aramaic
-=========================================================
+Vocab: vocabulary training for Biblical Hebrew, Aramaic and Greek
+===================================================================
 
 Vocab is free software for non-commercial use. It contains:
 
@@ -11,6 +11,18 @@ BHSA data
   Source: https://github.com/ETCBC/bhsa
   The vocabulary database in this program was derived from BHSA version 2021.
   Because of this licence, Vocab may not be used or distributed commercially.
+
+Greek New Testament (Nestle 1904)
+  Text-Fabric edition N1904 by the Center of Biblical Languages and Computing
+  (CBLC) and the ETCBC, MIT License: https://github.com/CenterBLC/N1904
+  Based on MACULA Greek by Clear Bible, licensed under Creative Commons
+  Attribution 4.0 International (CC BY 4.0):
+  https://github.com/Clear-Bible/macula-greek
+
+Greek glosses
+  From Bible Online Learner by Ezer IT Consulting (Claus Toendering), used with
+  permission: https://learner.bible, https://github.com/EzerIT/BibleOL
+  Two Danish glosses are corrected in Vocab.
 
 Ezra SIL font
   Copyright (c) SIL International. Licensed under the SIL Open Font License 1.1:

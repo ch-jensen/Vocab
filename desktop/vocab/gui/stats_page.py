@@ -42,6 +42,8 @@ def heading(text: str) -> QLabel:
     return label
 
 
+CORPUS_TEXT = {"bhsa": "the Hebrew Bible", "n1904": "the Greek New Testament"}
+
 MATURE_COLOUR = QColor("#2a78d6")
 YOUNG_COLOUR = QColor("#8fbbee")
 TRACK_COLOUR = QColor("#e8e7e2")
@@ -219,19 +221,22 @@ class StatsPage(QWidget):
 
         lay.addWidget(overview_tiles(self.store))
 
-        cov = stats.coverage_detail(self.store)
-        lay.addWidget(heading("How much of the text you know"))
-        hero = QLabel(f'<span style="font-size:22pt; font-weight:600;">{100 * cov.share:.1f}%</span> '
-                      "of all words in the Hebrew Bible belong to words you have learned; "
-                      f'<span style="font-size:22pt; font-weight:600;">{100 * cov.mature_share:.1f}%</span> '
-                      "to mature words.")
-        hero.setWordWrap(True)
-        lay.addWidget(hero)
-        lay.addWidget(legend())
-        books = stats.coverage_by_book(self.store)
-        lay.addWidget(progress_table(["Book", "Known words in the text", ""],
-                                     [(b.book, b.mature, b.known - b.mature, b.words)
-                                      for b in books], unit="%"))
+        # One section per text you study (the Hebrew Bible if you haven't started yet).
+        for corpus in stats.corpora_with_progress(self.store) or ["bhsa"]:
+            cov = stats.coverage_detail(self.store, corpus)
+            text = CORPUS_TEXT[corpus]
+            lay.addWidget(heading(f"How much of {text} you know"))
+            hero = QLabel(f'<span style="font-size:22pt; font-weight:600;">{100 * cov.share:.1f}%</span> '
+                          f"of all words in {text} belong to words you have learned; "
+                          f'<span style="font-size:22pt; font-weight:600;">{100 * cov.mature_share:.1f}%</span> '
+                          "to mature words.")
+            hero.setWordWrap(True)
+            lay.addWidget(hero)
+            lay.addWidget(legend())
+            books = stats.coverage_by_book(self.store, corpus=corpus)
+            lay.addWidget(progress_table(["Book", "Known words in the text", ""],
+                                         [(b.book, b.mature, b.known - b.mature, b.words)
+                                          for b in books], unit="%"))
 
         lay.addWidget(heading("Decks"))
         progress = [stats.deck_progress(self.store, d) for d in decks.list_decks(self.store)]

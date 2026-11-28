@@ -281,6 +281,14 @@ def self_test(app: QApplication, report: str, bhsa_db: str | None) -> int:
             window.study.answer.setText("and")
             window.study._enter()
             assert "Correct" in window.study.feedback.text()
+            greek = decks.create_deck(store, "Greek", DeckConfig(
+                corpus="n1904", plan_id="greek-frequency", languages=["Greek"]))
+            window.start_study(greek)
+            assert window.study.item.key.lex_id == "grc:ὁ", window.study.item
+            window.study.answer.setText("the")
+            window.study._enter()
+            assert "Correct" in window.study.feedback.text()
+            lines.append("greek " + window.study.item.clause[0].form)
             window.show_stats()
             lines.append(f"coverage {stats.coverage(store):.4f}")
             lines.append(f"optimizer {optimize.fit(optimize.training_data(store), None).message}")

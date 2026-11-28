@@ -5,7 +5,8 @@
 <h1 align="center">Vocab</h1>
 
 <p align="center">
-  Learn the vocabulary of the Hebrew Bible from the words as they actually occur in the text.
+  Learn the vocabulary of the Hebrew Bible and the Greek New Testament from the words as they
+  actually occur in the text.
 </p>
 
 <p align="center">
@@ -18,7 +19,8 @@
   <img src="images/Vocab%20desktop.png" width="800" alt="The study screen: a clause from Jeremiah 25:13 with the word being asked highlighted, and the feedback after a correct answer">
 </p>
 
-Vocab is a vocabulary trainer for Biblical Hebrew and Aramaic. Instead of drilling dictionary forms,
+Vocab is a vocabulary trainer for Biblical Hebrew, Aramaic and New Testament Greek. Instead of
+drilling dictionary forms,
 it shows you a word **as it is written in a real verse**, with its prefixes, suffixes and vowels,
 in its clause. You give the meaning, and Vocab works out when you should see the word again.
 
@@ -40,8 +42,11 @@ Vocab answers that with three principles:
 3. **Spaced repetition.** Words come back just before you would forget them. Vocab uses FSRS, the
    scheduling algorithm of [Anki](https://apps.ankiweb.net), and can fit it to your own memory.
 
-The data comes from the [BHSA](https://github.com/ETCBC/bhsa) (Biblia Hebraica Stuttgartensia
-Amstelodamensis, version 2021), the linguistic database of the Hebrew Bible made by the ETCBC.
+The Hebrew Bible comes from the [BHSA](https://github.com/ETCBC/bhsa) (Biblia Hebraica Stuttgartensia
+Amstelodamensis, version 2021), the linguistic database of the Hebrew Bible made by the ETCBC. The
+Greek New Testament is the Nestle 1904 text from [N1904](https://github.com/CenterBLC/N1904), made by
+the Center of Biblical Languages and Computing and the ETCBC, with Greek glosses from
+[Bible Online Learner](https://learner.bible).
 
 ## Getting started
 
@@ -53,7 +58,8 @@ Amstelodamensis, version 2021), the linguistic database of the Hebrew Bible made
      Macs (see Apple menu → *About This Mac*). Open it and drag Vocab to *Applications*. The app
      isn't notarized by Apple, so the first time macOS says it can't verify it: open
      *System Settings → Privacy & Security*, scroll down and click *Open Anyway*.
-2. Click **New deck…** and keep *Biblical Hebrew by frequency* to start with the most common words,
+2. Click **New deck…**, choose the text (Hebrew Bible or Greek New Testament) and keep the plan
+   *by frequency* to start with the most common words,
    or make your own selection.
 3. Click **Study**. Type the meaning and press Enter, or switch the deck to *show the answer and
    rate yourself*, as in Anki.
@@ -83,7 +89,9 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
 
 ## Features
 
-* **Decks.** Predefined plans for Hebrew and Aramaic, ordered by frequency, or your own selection
+* **Hebrew, Aramaic and Greek.** Decks from the Hebrew Bible or the Greek New Testament (Nestle
+  1904), each shown in its own direction and font. Greek decks can select by tense, voice and mood.
+* **Decks.** Predefined plans for Hebrew, Aramaic and New Testament Greek, ordered by frequency, or your own selection
   by part of speech, frequency rank, verbal stem, tense, pronominal suffix, and books with their own
   chapters (for example Genesis 1–11 and 37–50 together with Jonah, or the verbs in the piel).
   Optionally, each verbal stem can be learned as a separate word. Progress is shared between decks.
@@ -96,7 +104,8 @@ and choose Again, Hard, Good or Easy yourself (keys 1–4); the next word follow
   are split into *young* and *mature* (an interval of 21 days or more), with retention for each.
 * **Personal scheduling.** After 400 reviews, FSRS can be fitted to your own answers, so intervals
   match how quickly *you* forget. The fit is only used if it predicts your answers better.
-* **Glosses.** English (from the BHSA) and Danish glosses are included. Edit any gloss while
+* **Glosses.** Hebrew: English (from the BHSA) and Danish. Greek: Danish, English, Dutch,
+  Portuguese, Swahili and (partly) Spanish, from Bible Online Learner. Edit any gloss while
   studying, or import a `[Language]_glosses.csv` file to study with glosses in another language.
 * **From the notebook version.** Progress saved by the notebook version (`English_score.csv`,
   `Danish_score.csv`) can be imported with *File → Import scores*.
@@ -113,6 +122,10 @@ the licence of the BHSA 2021 data it is built on. See [LICENSE](LICENSE).
 
 This means you may use, share and adapt Vocab freely, **but not commercially**, and you must give
 appropriate credit, including to the BHSA:
+
+> Greek New Testament: Nestle 1904, Text-Fabric edition N1904 by the Center of Biblical Languages
+> and Computing and the ETCBC (MIT), based on MACULA Greek by Clear Bible (CC BY 4.0). Greek
+> glosses: Bible Online Learner, Ezer IT Consulting, used with permission.
 
 > Data: BHSA (Biblia Hebraica Stuttgartensia Amstelodamensis), version 2021, by the Eep Talstra
 > Centre for Bible and Computer (ETCBC), Vrije Universiteit Amsterdam, licensed under CC BY-NC 4.0.
