@@ -49,6 +49,7 @@ QLabel#deckName { font-size: 13.5pt; font-weight: 600; }
 QLabel#deckFigure { font-size: 15pt; font-weight: 600; }
 QPushButton#primary { background: #b7791f; color: #ffffff; border: 1px solid #b7791f; font-weight: 600; }
 QPushButton#primary:hover { background: #9c6519; }
+QPushButton#primary:disabled { background: #ead9bd; border-color: #ead9bd; color: #ffffff; }
 QFrame#tileCompact { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; }
 QLabel#tileValueCompact { font-size: 12pt; font-weight: 600; }
 QTableWidget { font-size: 12pt; selection-background-color: #fbe3b0; selection-color: #1a202c; }

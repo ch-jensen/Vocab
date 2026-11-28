@@ -499,3 +499,29 @@ def test_deck_cards_select_and_study(app, store):
     win.show_home()
     QTest.keyClick(home, Qt.Key_Return)                          # Enter studies the selected deck
     assert win.study.deck_label.text() == "A Hebrew"
+
+
+def test_study_button_disabled_when_nothing_to_study(app, store):
+    from fsrs import Rating
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from vocab.gui.app import MainWindow
+    decks.create_deck(store, "Busy", DeckConfig(plan_id="hebrew-frequency", new_per_day=5))
+    done = decks.create_deck(store, "Done", DeckConfig(plan_id="aramaic-frequency",
+                                                       languages=["Hebrew", "Aramaic"],
+                                                       answer_mode="self", new_per_day=1))
+    win = MainWindow(store)
+    win.start_study(done)
+    win.study._enter()
+    win.study.rate(Rating.Again)                 # the day's only new word, back in 1 minute
+    win.show_home()
+    home = win.home
+    busy, finished = home.cards
+    assert busy.study_btn.isEnabled() and busy.has_work
+    assert not finished.study_btn.isEnabled() and not finished.has_work
+    assert "come back at" in finished.study_btn.toolTip()
+    home.select_deck(done.deck_id)
+    QTest.keyClick(home, Qt.Key_Return)          # Enter does nothing for a finished deck
+    assert win.pages.currentWidget() is home
+    QTest.mouseDClick(finished, Qt.LeftButton)   # nor does a double-click
+    assert win.pages.currentWidget() is home

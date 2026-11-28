@@ -41,7 +41,12 @@ class DeckCard(QFrame):
         self.deck = deck
         self.setObjectName("deckCard")
         self.setCursor(Qt.PointingHandCursor)
-        self.counts = StudySession(store, deck).counts()
+        session = StudySession(store, deck)
+        self.counts = session.counts()
+        # Something to study right now? (New words left today, or words due now.)
+        c0 = self.counts
+        self.has_work = c0.new + c0.learning + c0.review > 0
+        waiting = None if self.has_work else session.next_learning_due()
         progress = stats.deck_progress(store, deck)
         self.language = decks.language_label(store.con, deck.config)
 
@@ -94,6 +99,14 @@ class DeckCard(QFrame):
         self.study_btn = QPushButton("Study ›")
         self.study_btn.setObjectName("primary")
         self.study_btn.clicked.connect(lambda: self.study.emit(self.deck))
+        self.study_btn.setEnabled(self.has_work)
+        if waiting is not None:
+            due, n = waiting
+            words = "1 word" if n == 1 else f"{n} words"
+            self.study_btn.setToolTip(f"Nothing to study right now. {words} in learning come back "
+                                      f"at {due.astimezone():%H:%M}.")
+        elif not self.has_work:
+            self.study_btn.setToolTip("Nothing more to study in this deck today.")
         right.addSpacing(6)
         right.addWidget(self.study_btn)
 
@@ -113,7 +126,8 @@ class DeckCard(QFrame):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:
-        self.study.emit(self.deck)
+        if self.has_work:
+            self.study.emit(self.deck)
 
 class HomePage(QWidget):
     study_requested = Signal(object)   # Deck
@@ -255,9 +269,11 @@ class HomePage(QWidget):
             b.setEnabled(has)
 
     def study(self) -> None:
-        deck = self.selected_deck()
-        if deck:
-            self.study_requested.emit(deck)
+        """Study the selected deck, if it has anything to study right now."""
+        if self._selected is not None and self._selected < len(self.cards):
+            card = self.cards[self._selected]
+            if card.has_work:
+                self.study_requested.emit(card.deck)
 
     def new_deck(self) -> None:
         dlg = DeckEditor(self.store, None, self)
