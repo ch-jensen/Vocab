@@ -425,3 +425,19 @@ def plans(store: Store) -> list[sqlite3.Row]:
         "SELECT p.plan_id, p.corpus, p.name, p.description, COUNT(i.lex_id) AS size "
         "FROM bhsa.plans p JOIN bhsa.plan_items i USING (plan_id) GROUP BY p.plan_id "
         "ORDER BY MIN(p.rowid)").fetchall()
+
+
+def language_label(con: sqlite3.Connection, cfg: DeckConfig) -> str:
+    """The language(s) of a deck's words, e.g. 'Hebrew', 'Hebrew and Aramaic', 'Greek'."""
+    available = CORPUS_LANGUAGES.get(cfg.corpus, [])
+    if cfg.plan_id:
+        in_plan = _cached(con, ("plan languages", cfg.plan_id), lambda: frozenset(
+            r[0] for r in con.execute(
+                "SELECT DISTINCT l.language FROM bhsa.plan_items p "
+                "JOIN bhsa.lexemes l ON l.lex_id = p.lex_id WHERE p.plan_id = ?", (cfg.plan_id,))))
+        languages = [lang for lang in available if lang in in_plan]
+    elif len(available) > 1:
+        languages = [lang for lang in available if lang in (cfg.languages or available)]
+    else:
+        languages = list(available)
+    return " and ".join(languages) or "–"

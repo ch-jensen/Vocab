@@ -562,3 +562,14 @@ def test_greek_coverage_separate(store):
     assert 0.06 < stats.coverage(store, "n1904") < 0.07        # καί: 8,978 of 137,779 words
     assert stats.coverage(store, "bhsa") == 0
     assert stats.corpora_with_progress(store) == ["n1904"]
+
+
+def test_language_label(store):
+    label = lambda **kw: decks.language_label(store.con, DeckConfig(**kw))
+    assert label(plan_id="hebrew-frequency", languages=["Hebrew", "Aramaic"]) == "Hebrew"
+    assert label(plan_id="aramaic-frequency", languages=["Hebrew", "Aramaic"]) == "Aramaic"
+    assert label() == "Hebrew"
+    assert label(languages=["Hebrew", "Aramaic"]) == "Hebrew and Aramaic"
+    assert label(languages=["Aramaic"]) == "Aramaic"
+    assert label(corpus="n1904", plan_id="greek-frequency", languages=["Greek"]) == "Greek"
+    assert label(corpus="n1904", languages=["Greek"]) == "Greek"

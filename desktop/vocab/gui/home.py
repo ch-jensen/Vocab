@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHea
 from .. import deckfile, decks, stats
 from ..session import StudySession
 from ..store import Store
-from .common import BAD, GOOD
+from .common import BAD, GOOD, MUTED
 from .counts import DUE_TIP, LEARNING_TIP, NEW_TIP, learning_text
 from .deck_editor import DeckEditor
 from .stats_page import overview_tiles
@@ -30,14 +30,17 @@ class HomePage(QWidget):
         self.summary = QLabel()
         self.summary.setObjectName("muted")
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Deck", "New", "Learning", "Due"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Deck", "Language", "New", "Learning", "Due"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for col in (1, 2, 3):
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+        self.table.setColumnWidth(1, 190)
+        for col in (2, 3, 4):
             self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.Fixed)
             self.table.setColumnWidth(col, 110)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
-        for col, tip in ((1, NEW_TIP), (2, LEARNING_TIP), (3, DUE_TIP)):
+        self.table.horizontalHeaderItem(1).setToolTip("The language of the deck's words.")
+        for col, tip in ((2, NEW_TIP), (3, LEARNING_TIP), (4, DUE_TIP)):
             self.table.horizontalHeaderItem(col).setToolTip(tip)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -99,14 +102,17 @@ class HomePage(QWidget):
         self.table.setRowCount(len(self._decks))
         for row, deck in enumerate(self._decks):
             c = StudySession(self.store, deck).counts()
-            cells = [deck.name, str(c.new), learning_text(c), str(c.review)]
-            colours = [None, GOOD, BAD, None]
+            language = decks.language_label(self.store.con, deck.config)
+            cells = [deck.name, language, str(c.new), learning_text(c), str(c.review)]
+            colours = [None, MUTED, GOOD, BAD, None]
             for col, (text, colour) in enumerate(zip(cells, colours)):
                 item = QTableWidgetItem(text)
                 if col:
                     item.setTextAlignment(Qt.AlignCenter)
-                if col:
-                    item.setToolTip((NEW_TIP, LEARNING_TIP, DUE_TIP)[col - 1])
+                if col == 1:
+                    item.setToolTip(f"{language} · {decks.CORPORA[deck.config.corpus]}")
+                elif col:
+                    item.setToolTip((NEW_TIP, LEARNING_TIP, DUE_TIP)[col - 2])
                 if colour and text != "0":
                     item.setForeground(QColor(colour))
                 self.table.setItem(row, col, item)

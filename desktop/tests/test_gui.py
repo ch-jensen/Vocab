@@ -35,7 +35,8 @@ def test_home_lists_decks(app, store):
     win = MainWindow(store)
     assert win.home.table.rowCount() == 1
     assert win.home.table.item(0, 0).text() == "Frequency"
-    assert win.home.table.item(0, 1).text() == "10"
+    assert win.home.table.item(0, 1).text() == "Hebrew"
+    assert win.home.table.item(0, 2).text() == "10"
 
 
 def test_typed_study_flow(app, store):
@@ -222,8 +223,8 @@ def test_counts_bar_and_tooltips(app, store):
     assert bar.new.text() == "2 new"
     assert "later today" in bar.learning.toolTip() and bar.due.toolTip()
     win.show_home()
-    assert win.home.table.item(0, 2).text() == "0 (+1)"
-    assert win.home.table.horizontalHeaderItem(2).toolTip() == bar.learning.toolTip()
+    assert win.home.table.item(0, 3).text() == "0 (+1)"
+    assert win.home.table.horizontalHeaderItem(3).toolTip() == bar.learning.toolTip()
 
 
 def test_stats_page(app, store):
