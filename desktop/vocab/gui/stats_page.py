@@ -123,6 +123,33 @@ def progress_table(headers: list[str], rows: list[tuple[str, int, int, int]],
     return table
 
 
+def overview_tiles(store: Store) -> QWidget:
+    """The row of overview figures (shared by the deck list and the statistics)."""
+    s = stats.summary(store)
+    tiles = QGridLayout()
+    tiles.setContentsMargins(0, 0, 0, 0)
+
+    def pct(x):
+        return f"{100 * x:.0f}%" if x is not None else "–"
+    for i, t in enumerate([
+        tile(str(s.mature), "mature words", MATURE_TIP),
+        tile(str(s.young), "young words", YOUNG_TIP),
+        tile(str(s.learning), "in learning", "Words met recently or forgotten, still in short steps."),
+        tile(str(s.reviews_today), "reviews today", "Answers given today (the day starts at 04:00)."),
+        tile("–" if s.retention_30d is None else f"{pct(s.retention_young)} · {pct(s.retention_mature)}",
+             "remembered: young · mature",
+             "Share of reviews in the last 30 days that you remembered, for young and for "
+             f"mature words (a review counts as mature if the word had gone {stats.MATURE_DAYS} "
+             f"days or more since its previous review). All together: {pct(s.retention_30d)}."),
+        tile(f"{s.streak_days} d", "study streak", "Days in a row with at least one review."),
+    ]):
+        tiles.addWidget(t, 0, i)
+    holder = QWidget()
+    holder.setObjectName("overview")
+    holder.setLayout(tiles)
+    return holder
+
+
 class FitWorker(QObject):
     done = Signal(object)
 
@@ -174,28 +201,8 @@ class StatsPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         lay = self.body_layout
-        s = stats.summary(self.store)
 
-        tiles = QGridLayout()
-
-        def pct(x):
-            return f"{100 * x:.0f}%" if x is not None else "–"
-        for i, t in enumerate([
-            tile(str(s.mature), "mature words", MATURE_TIP),
-            tile(str(s.young), "young words", YOUNG_TIP),
-            tile(str(s.learning), "in learning", "Words met recently or forgotten, still in short steps."),
-            tile(str(s.reviews_today), "reviews today", "Answers given today (the day starts at 04:00)."),
-            tile("–" if s.retention_30d is None else f"{pct(s.retention_young)} · {pct(s.retention_mature)}",
-                 "remembered: young · mature",
-                 "Share of reviews in the last 30 days that you remembered, for young and for "
-                 f"mature words (a review counts as mature if the word had gone {stats.MATURE_DAYS} "
-                 f"days or more since its previous review). All together: {pct(s.retention_30d)}."),
-            tile(f"{s.streak_days} d", "study streak", "Days in a row with at least one review."),
-        ]):
-            tiles.addWidget(t, 0, i)
-        holder = QWidget()
-        holder.setLayout(tiles)
-        lay.addWidget(holder)
+        lay.addWidget(overview_tiles(self.store))
 
         cov = stats.coverage_detail(self.store)
         lay.addWidget(heading("How much of the text you know"))
